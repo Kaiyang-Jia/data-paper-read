@@ -53,8 +53,10 @@ def update_data():
             
         # 执行数据更新流程 (Run in the get_data directory)
         logger.info("启动数据更新流程...")
-        result = subprocess.run([sys.executable, pipeline_script, "--full-update"], 
-                               cwd=os.path.dirname(pipeline_script), # Set working directory
+        script_dir = os.path.dirname(pipeline_script)
+        script_name = os.path.basename(pipeline_script)
+        result = subprocess.run([sys.executable, script_name, "--full-update"], 
+                               cwd=script_dir, # Set working directory to 'get_data'
                                capture_output=True, text=True)
         
         if result.returncode != 0:

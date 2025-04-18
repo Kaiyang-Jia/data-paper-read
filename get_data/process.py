@@ -89,7 +89,7 @@ class NLPProcessor:
                     return ""
     
     def process_papers(self):
-        """处理论文数据"""
+        """处理论文数据，包括处理新论文和补全旧论文的缺失信息"""
         # 检查文件是否存在
         if not os.path.exists(self.input_csv):
             logger.error(f"输入文件不存在: {self.input_csv}")
@@ -97,10 +97,14 @@ class NLPProcessor:
             
         # 读取输入CSV
         input_datasets = []
+        input_doi_map = {}
         try:
             with open(self.input_csv, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                input_datasets = list(reader)
+                for row in reader:
+                    input_datasets.append(row)
+                    if "doi" in row and row["doi"]:
+                        input_doi_map[row["doi"]] = row # Store raw data by DOI
             logger.info(f"成功读取 {len(input_datasets)} 条输入数据")
         except Exception as e:
             logger.error(f"读取输入文件失败: {e}")
@@ -113,7 +117,7 @@ class NLPProcessor:
         
         # 读取现有输出CSV（避免重复处理）
         existing_data = []
-        existing_doi = set()
+        processed_doi = set()
         if os.path.exists(self.output_csv):
             try:
                 with open(self.output_csv, "r", encoding="utf-8") as f:
@@ -121,20 +125,82 @@ class NLPProcessor:
                     for row in reader:
                         existing_data.append(row)
                         if "doi" in row and row["doi"]:
-                            existing_doi.add(row["doi"])
+                            processed_doi.add(row["doi"])
                 logger.info(f"已有 {len(existing_data)} 条处理过的数据")
             except Exception as e:
                 logger.error(f"读取现有输出文件失败: {e}")
+                # If reading fails, proceed as if no existing data
+                existing_data = []
+                processed_doi = set()
         
-        # 处理新数据
-        new_data = []
+        # 准备最终输出的数据列表和头部
+        final_output_data = []
         headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
-                  "url", "authors", "tags", "abstract"]
+                   "url", "authors", "tags", "abstract"]
         
+        # 标记是否有数据被修改或添加
+        data_changed = False
+
+        # 1. 检查并更新现有数据
+        logger.info("开始检查并更新现有数据...")
+        for i, row in enumerate(tqdm(existing_data, desc="检查旧数据")):
+            doi = row.get("doi", "")
+            title = row.get("title", "")
+            abstract = row.get("abstract", "") # Get abstract from processed if available
+            # If abstract is missing in processed, try getting it from raw input map
+            if not abstract and doi in input_doi_map:
+                 abstract = input_doi_map[doi].get("abstract", "")
+                 row["abstract"] = abstract # Update row if abstract was missing
+                 if abstract:
+                     data_changed = True
+                     logger.info(f"为 DOI {doi} 从原始数据补充了摘要")
+
+            needs_update = False
+            
+            # 检查中文标题
+            if title and not row.get("titleCn"): 
+                logger.info(f"为 DOI {doi} 补全中文标题...")
+                title_cn = self.call_ai_api(title, "translate")
+                if title_cn:
+                    row["titleCn"] = title_cn
+                    needs_update = True
+                    time.sleep(1) # API call delay
+            
+            # 检查中文解读 (需要原文标题或摘要)
+            text_for_interpretation = abstract if abstract else title
+            if text_for_interpretation and not row.get("interpretationCn"):
+                logger.info(f"为 DOI {doi} 补全中文解读...")
+                interpretation_cn = self.call_ai_api(text_for_interpretation, "interpret")
+                if interpretation_cn:
+                    row["interpretationCn"] = interpretation_cn
+                    needs_update = True
+                    time.sleep(1) # API call delay
+
+            # 检查标签 (需要原文标题或摘要)
+            if text_for_interpretation and not row.get("tags"):
+                logger.info(f"为 DOI {doi} 补全标签...")
+                tags = self.call_ai_api(text_for_interpretation, "generate_tags")
+                if tags:
+                    row["tags"] = tags
+                    needs_update = True
+                    time.sleep(1) # API call delay
+            
+            if needs_update:
+                data_changed = True
+                # 每处理5篇等待一下
+                if i > 0 and i % 5 == 0:
+                    logger.info("API调用间歇等待...")
+                    time.sleep(2)
+
+            final_output_data.append(row) # Add potentially updated row
+
+        # 2. 处理新数据 (存在于 raw 但不在 processed 中的)
         logger.info("开始处理新数据...")
-        for data in tqdm(input_datasets, desc="处理论文"):
-            if "doi" not in data or not data["doi"] or data["doi"] in existing_doi:
-                continue
+        new_papers_processed_count = 0
+        for data in tqdm(input_datasets, desc="处理新论文"):
+            doi = data.get("doi", "")
+            if not doi or doi in processed_doi:
+                continue # Skip if no DOI or already processed
                 
             # 获取基本信息
             title = data.get("title", "")
@@ -144,68 +210,65 @@ class NLPProcessor:
             processed_item = {
                 "title": title,
                 "publishDate": data.get("publishDate", ""),
-                "doi": data.get("doi", ""),
+                "doi": doi,
                 "url": data.get("url", ""),
                 "authors": data.get("authors", ""),
-                "abstract": abstract
+                "abstract": abstract,
+                "titleCn": "",
+                "interpretationCn": "",
+                "tags": data.get("tags", "") # Use raw tags if available
             }
             
             # 如果有内容，进行NLP处理
             if title:
+                logger.info(f"处理新论文 DOI {doi}: {title[:30]}...")
                 # 翻译标题
-                logger.info(f"翻译标题: {title[:30]}...")
                 title_cn = self.call_ai_api(title, "translate")
                 processed_item["titleCn"] = title_cn
+                time.sleep(1)
                 
                 # 为确保有内容可解读，使用摘要优先，无摘要则使用标题
                 text_for_interpretation = abstract if abstract else title
                 
                 # 生成解读
-                logger.info(f"生成解读: {text_for_interpretation[:30]}...")
                 interpretation_cn = self.call_ai_api(text_for_interpretation, "interpret")
                 processed_item["interpretationCn"] = interpretation_cn
+                time.sleep(1)
                 
                 # 生成标签（如果原始数据没有标签）
-                if not data.get("tags"):
-                    logger.info("生成标签...")
+                if not processed_item["tags"]:
                     tags = self.call_ai_api(text_for_interpretation, "generate_tags")
                     processed_item["tags"] = tags
-                else:
-                    processed_item["tags"] = data.get("tags", "")
+                    time.sleep(1)
                     
-                # 添加到新数据列表
-                new_data.append(processed_item)
+            final_output_data.append(processed_item)
+            data_changed = True
+            new_papers_processed_count += 1
+            processed_doi.add(doi) # Add to processed set immediately
                 
-                # 每处理5篇文章等待一下，避免API限流
-                if len(new_data) % 5 == 0:
-                    time.sleep(2)
+            # 每处理5篇新文章等待一下
+            if new_papers_processed_count > 0 and new_papers_processed_count % 5 == 0:
+                logger.info("API调用间歇等待...")
+                time.sleep(2)
         
-        # 检查是否有新处理的数据
-        if not new_data:
-            logger.info("没有新数据需要处理")
+        # 检查是否有数据更改或添加
+        if not data_changed:
+            logger.info("没有数据被修改或添加，文件保持不变")
             return True
             
-        # 写入输出CSV
+        # 写入输出CSV (覆盖写入)
         try:
             with open(self.output_csv, "w", encoding="utf-8", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writeheader()
-                # 先写入已有数据，后写入新数据
-                for row in existing_data:
+                
+                # 写入所有数据 (已更新的旧数据 + 新处理的数据)
+                for row in final_output_data:
                     # 确保所有字段都有值，避免CSV格式错误
-                    for field in headers:
-                        if field not in row:
-                            row[field] = ""
-                    writer.writerow(row)
+                    output_row = {field: row.get(field, "") for field in headers}
+                    writer.writerow(output_row)
                     
-                for row in new_data:
-                    # 确保所有字段都有值
-                    for field in headers:
-                        if field not in row:
-                            row[field] = ""
-                    writer.writerow(row)
-                    
-            logger.info(f"数据保存到 {self.output_csv}，{len(new_data)} 条新处理记录，共 {len(existing_data) + len(new_data)} 条记录")
+            logger.info(f"数据已更新并保存到 {self.output_csv}，共 {len(final_output_data)} 条记录")
             return True
         except Exception as e:
             logger.error(f"保存输出文件失败: {e}")

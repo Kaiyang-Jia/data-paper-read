@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 showLoading(false);
                 
                 allArticles = data || [];
+                allArticles.reverse(); // 反转数组，使最新的文章在前
                 
                 // 生成唯一标签
                 generateTagFilters(allArticles);
@@ -161,9 +162,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 生成文章卡片
         paginatedArticles.forEach((article, index) => {
-            // 生成随机的投票数
-            const voteCount = Math.floor(Math.random() * 100) + 50;
-            
             // 处理标签
             let tagsHTML = '';
             if (article.tags) {
@@ -178,10 +176,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             card.innerHTML = `
                 <div class="paper-header">
-                    <div class="voting">
-                        <span class="vote-icon">▲</span>
-                        <span class="vote-count">${voteCount}</span>
-                    </div>
+                    <!-- Voting section removed -->
                     <div class="paper-content">
                         <h3 class="paper-title">${article.title}</h3>
                         <p class="paper-cn-title">【${article.titleCn || article.title}】</p>
