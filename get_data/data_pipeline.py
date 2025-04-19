@@ -158,7 +158,7 @@ def main():
     parser.add_argument("--full-update", action="store_true", help="执行完整的数据更新流程")
     args = parser.parse_args()
     
-    if args.full_update:
+    if args.full_update:  # 修正 full-update 为 full_update（下划线而非连字符）
         run_full_pipeline()
     else:
         logger.info("使用 --full-update 参数执行完整数据处理流程")
