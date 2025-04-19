@@ -28,6 +28,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- 新增：定义预设分类 (Subject) ---
+PREDEFINED_SUBJECTS = [
+    "生物技术",
+    "气候科学",
+    "计算生物学与生物信息学",
+    "疾病",
+    "生态学",
+    "工程学",
+    "环境科学",
+    "环境社会科学",
+    "遗传学",
+    "医疗保健",
+    "水文学",
+    "数学与计算",
+    "医学研究",
+    "微生物学",
+    "神经科学",
+    "海洋科学",
+    "植物科学",
+    "科学界",
+    "社会科学",
+    "动物学",
+    "其他"  # 添加一个“其他”类别以防万一
+]
 class NLPProcessor:
     """科研论文NLP处理类"""
     
@@ -36,6 +60,10 @@ class NLPProcessor:
         self.input_csv = "raw_papers.csv"
         self.output_csv = "processed_papers.csv"
         self.api_client = self._init_deepseek_client()
+        # --- 新增：将分类列表存为实例属性 ---
+        self.subjects = PREDEFINED_SUBJECTS
+        # --- 新增：默认期刊来源 ---
+        self.default_journal = "Scientific Data"
 
     def _init_deepseek_client(self):
         """初始化DeepSeek API客户端"""
@@ -59,24 +87,54 @@ class NLPProcessor:
             return ""
             
         prompt = ""
+        system_content = "你是一位专业的科研文献翻译与解读助手" # 默认 System Prompt
         if task == "translate":
             prompt = f"将以下英文论文标题翻译成简洁的学术中文，保持专业术语准确性，仅返回翻译结果，不要添加任何说明或注释：\n{text}"
         elif task == "interpret":
             prompt = f"基于以下论文描述，提供一段70-90字的简洁学术性中文总结，聚焦数据集的制作过程和潜在应用价值，采用适合研究人员的正式语气，仅返回总结内容，不要添加任何说明或注释：\n{text}"
         elif task == "generate_tags":
             prompt = f"基于以下论文描述，为这篇科研数据论文生成3-5个简洁的中文标签，使用逗号分隔，适合学术分类，仅返回标签内容，不要添加任何说明或注释：\n{text}"
-        
+        # --- 新增：处理 classify 任务 ---
+        elif task == "classify":
+            subject_list_str = ", ".join(self.subjects)
+            prompt = f"请根据以下论文信息（优先参考摘要，其次是标题），从下列预定义的分类 (Subject) 中选择一个最相关的类别：[{subject_list_str}]。请仅返回最合适的中文类别名称，不要添加任何说明、标点或注释。\n\n论文信息：\n{text}"
+            system_content = "你是一位专业的科研文献分类助手。" # 针对分类任务调整 System Prompt
+
+        # --- 新增：确保处理 classify 任务 ---
+        if not prompt:
+             logger.error(f"未知的 AI 任务类型: {task}")
+             return ""
+
         for attempt in range(retries):
             try:
                 response = self.api_client.chat.completions.create(
                     model="deepseek-chat",
                     messages=[
-                        {"role": "system", "content": "你是一位专业的科研文献翻译与解读助手"},
+                        {"role": "system", "content": system_content},
                         {"role": "user", "content": prompt}
                     ],
                     stream=False
                 )
-                return response.choices[0].message.content.strip()
+                result = response.choices[0].message.content.strip()
+                
+                # --- 新增：对分类结果进行校验 ---
+                if task == "classify":
+                    # 移除可能的标点符号
+                    result = result.replace("，", "").replace(",", "").replace("。", "").strip()
+                    if result not in self.subjects:
+                        logger.warning(f"LLM返回的分类 '{result}' 不在预定义列表中，将尝试查找最接近的或标记为'其他'")
+                        # 尝试查找包含关系的匹配
+                        found = False
+                        for subj in self.subjects:
+                            if subj in result or result in subj: # 简单包含关系检查
+                                result = subj
+                                found = True
+                                logger.info(f"修正分类为: {result}")
+                                break
+                        if not found:
+                            logger.warning(f"无法匹配分类 '{result}'，标记为 '其他'")
+                            result = "其他" # 默认归类为“其他”
+                return result
             except Exception as e:
                 logger.error(f"API调用失败 (尝试 {attempt+1}/{retries}): {e}")
                 if attempt < retries - 1:
@@ -135,8 +193,9 @@ class NLPProcessor:
         
         # 准备最终输出的数据列表和头部
         final_output_data = []
+        # --- 修改：在 headers 中添加 journal ---
         headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
-                   "url", "authors", "tags", "abstract"]
+                   "url", "authors", "tags", "Subject", "journal", "abstract"] # 添加了 "journal"
         
         # 标记是否有数据被修改或添加
         data_changed = False
@@ -166,24 +225,41 @@ class NLPProcessor:
                     needs_update = True
                     time.sleep(1) # API call delay
             
+            # 确定用于解读、分类和标签生成的文本 (优先摘要)
+            text_for_nlp = abstract if abstract else title
+
             # 检查中文解读 (需要原文标题或摘要)
-            text_for_interpretation = abstract if abstract else title
-            if text_for_interpretation and not row.get("interpretationCn"):
+            if text_for_nlp and not row.get("interpretationCn"):
                 logger.info(f"为 DOI {doi} 补全中文解读...")
-                interpretation_cn = self.call_ai_api(text_for_interpretation, "interpret")
+                interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
                 if interpretation_cn:
                     row["interpretationCn"] = interpretation_cn
                     needs_update = True
                     time.sleep(1) # API call delay
 
             # 检查标签 (需要原文标题或摘要)
-            if text_for_interpretation and not row.get("tags"):
+            if text_for_nlp and not row.get("tags"):
                 logger.info(f"为 DOI {doi} 补全标签...")
-                tags = self.call_ai_api(text_for_interpretation, "generate_tags")
+                tags = self.call_ai_api(text_for_nlp, "generate_tags")
                 if tags:
                     row["tags"] = tags
                     needs_update = True
                     time.sleep(1) # API call delay
+
+            # --- 新增：检查 Subject 分类 ---
+            if text_for_nlp and not row.get("Subject"):
+                logger.info(f"为 DOI {doi} 补全 Subject 分类...")
+                subject = self.call_ai_api(text_for_nlp, "classify")
+                if subject: # 确保API调用成功且返回了有效分类
+                    row["Subject"] = subject
+                    needs_update = True
+                    time.sleep(1) # API call delay
+
+            # --- 新增：检查 journal 字段 ---
+            if not row.get("journal"):
+                row["journal"] = self.default_journal
+                data_changed = True
+                logger.info(f"为 DOI {doi} 补充默认期刊信息")
             
             if needs_update:
                 data_changed = True
@@ -206,7 +282,7 @@ class NLPProcessor:
             title = data.get("title", "")
             abstract = data.get("abstract", "")
             
-            # 准备处理对象
+            # --- 修改：初始化 processed_item，包含 journal ---
             processed_item = {
                 "title": title,
                 "publishDate": data.get("publishDate", ""),
@@ -216,7 +292,9 @@ class NLPProcessor:
                 "abstract": abstract,
                 "titleCn": "",
                 "interpretationCn": "",
-                "tags": data.get("tags", "") # Use raw tags if available
+                "tags": data.get("tags", ""), # 使用原始 tags (如果有)
+                "Subject": "", # 初始化 Subject 字段
+                "journal": data.get("journal", self.default_journal) # 添加 journal 字段，默认为 Scientific Data
             }
             
             # 如果有内容，进行NLP处理
@@ -227,19 +305,24 @@ class NLPProcessor:
                 processed_item["titleCn"] = title_cn
                 time.sleep(1)
                 
-                # 为确保有内容可解读，使用摘要优先，无摘要则使用标题
-                text_for_interpretation = abstract if abstract else title
+                # 为确保有内容可处理，使用摘要优先，无摘要则使用标题
+                text_for_nlp = abstract if abstract else title
                 
                 # 生成解读
-                interpretation_cn = self.call_ai_api(text_for_interpretation, "interpret")
+                interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
                 processed_item["interpretationCn"] = interpretation_cn
                 time.sleep(1)
                 
                 # 生成标签（如果原始数据没有标签）
                 if not processed_item["tags"]:
-                    tags = self.call_ai_api(text_for_interpretation, "generate_tags")
+                    tags = self.call_ai_api(text_for_nlp, "generate_tags")
                     processed_item["tags"] = tags
                     time.sleep(1)
+
+                # --- 新增：生成 Subject 分类 ---
+                subject = self.call_ai_api(text_for_nlp, "classify")
+                processed_item["Subject"] = subject # 存储分类结果
+                time.sleep(1)
                     
             final_output_data.append(processed_item)
             data_changed = True
@@ -259,6 +342,7 @@ class NLPProcessor:
         # 写入输出CSV (覆盖写入)
         try:
             with open(self.output_csv, "w", encoding="utf-8", newline="") as f:
+                # --- 确保使用更新后的 headers ---
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writeheader()
                 

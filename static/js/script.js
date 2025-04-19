@@ -9,12 +9,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('articleDetailModal');
     const closeModalBtn = document.getElementById('closeModal');
     const closeSecondaryBtn = document.querySelector('.close-btn-secondary');
-    const tagsFilter = document.getElementById('tagsFilter');
+    // --- 修改：获取 Subject 筛选容器 ---
+    const subjectFilterContainer = document.getElementById('subjectFilter'); // 假设 HTML 中容器 ID 改为 subjectFilter
     const pagination = document.getElementById('pagination');
     
     // 全局变量
     let allArticles = [];
-    let currentTag = '全部';
+    // --- 修改：当前筛选条件改为 Subject ---
+    let currentSubject = '全部'; 
     let currentPage = 1;
     const articlesPerPage = 6;
 
@@ -49,8 +51,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 allArticles = data || [];
                 allArticles.reverse(); // 反转数组，使最新的文章在前
                 
-                // 生成唯一标签
-                generateTagFilters(allArticles);
+                // --- 修改：生成 Subject 筛选器 ---
+                generateSubjectFilters(allArticles);
                 
                 // 渲染文章
                 renderArticles(currentPage);
@@ -65,72 +67,63 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
 
-    // 生成标签筛选器
-    function generateTagFilters(articles) {
-        if (!tagsFilter) return;
+    // --- 修改：生成 Subject 筛选器 ---
+    function generateSubjectFilters(articles) {
+        if (!subjectFilterContainer) return;
         
-        // 保留"全部"标签
-        const allTagElement = tagsFilter.querySelector('[data-tag="全部"]');
-        tagsFilter.innerHTML = '';
-        if (allTagElement) {
-            tagsFilter.appendChild(allTagElement);
+        // 保留"全部"按钮
+        const allSubjectElement = subjectFilterContainer.querySelector('[data-subject="全部"]');
+        subjectFilterContainer.innerHTML = ''; // 清空现有按钮
+        if (allSubjectElement) {
+            subjectFilterContainer.appendChild(allSubjectElement);
         } else {
-            const allTag = document.createElement('div');
-            allTag.className = 'tag-pill active';
-            allTag.dataset.tag = '全部';
-            allTag.textContent = '全部';
-            tagsFilter.appendChild(allTag);
+            const allSubjectBtn = document.createElement('div');
+            allSubjectBtn.className = 'tag-pill active'; // 复用样式
+            allSubjectBtn.dataset.subject = '全部';
+            allSubjectBtn.textContent = '全部';
+            subjectFilterContainer.appendChild(allSubjectBtn);
         }
         
-        // 提取所有唯一标签
-        const uniqueTags = new Set();
+        // 提取所有唯一的 Subject
+        const uniqueSubjects = new Set();
         articles.forEach(article => {
-            if (article.tags) {
-                const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
-                tagsArray.forEach(tag => {
-                    const trimmedTag = tag.trim();
-                    if (trimmedTag) {
-                        uniqueTags.add(trimmedTag);
-                    }
-                });
+            if (article.Subject && article.Subject.trim()) { // 检查 Subject 字段
+                uniqueSubjects.add(article.Subject.trim());
             }
         });
         
-        // 创建标签元素
-        Array.from(uniqueTags).sort().forEach(tag => {
-            const tagElement = document.createElement('div');
-            tagElement.className = 'tag-pill';
-            tagElement.dataset.tag = tag;
-            tagElement.textContent = tag;
-            tagsFilter.appendChild(tagElement);
+        // 创建 Subject 按钮
+        Array.from(uniqueSubjects).sort().forEach(subject => {
+            const subjectElement = document.createElement('div');
+            subjectElement.className = 'tag-pill'; // 复用样式
+            subjectElement.dataset.subject = subject;
+            subjectElement.textContent = subject;
+            subjectFilterContainer.appendChild(subjectElement);
         });
         
-        // 添加标签点击事件
-        const tagPills = tagsFilter.querySelectorAll('.tag-pill');
-        tagPills.forEach(pill => {
+        // 添加 Subject 按钮点击事件
+        const subjectPills = subjectFilterContainer.querySelectorAll('.tag-pill');
+        subjectPills.forEach(pill => {
             pill.addEventListener('click', () => {
-                tagPills.forEach(p => p.classList.remove('active'));
+                subjectPills.forEach(p => p.classList.remove('active'));
                 pill.classList.add('active');
-                currentTag = pill.dataset.tag;
-                currentPage = 1;
+                currentSubject = pill.dataset.subject; // 更新当前 Subject
+                currentPage = 1; // 重置到第一页
                 renderArticles(currentPage);
                 generatePagination();
             });
         });
     }
 
-    // 根据标签筛选文章
-    function filterArticlesByTag(articles, tag) {
-        if (!tag || tag === '全部') {
-            return articles;
+    // --- 修改：根据 Subject 筛选文章 ---
+    function filterArticlesBySubject(articles, subject) {
+        if (!subject || subject === '全部') {
+            return articles; // 返回全部文章
         }
         
         return articles.filter(article => {
-            if (!article.tags) return false;
-            
-            // 确保tags是数组
-            const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
-            return tagsArray.some(t => t.trim() === tag.trim());
+            // 直接比较 Subject 字段
+            return article.Subject && article.Subject.trim() === subject.trim(); 
         });
     }
 
@@ -138,8 +131,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderArticles(page) {
         if (!articlesList) return;
         
-        // 筛选文章
-        const filteredArticles = filterArticlesByTag(allArticles, currentTag);
+        // --- 修改：按 Subject 筛选 ---
+        const filteredArticles = filterArticlesBySubject(allArticles, currentSubject);
         
         // 计算分页
         const start = (page - 1) * articlesPerPage;
@@ -153,8 +146,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (paginatedArticles.length === 0) {
             articlesList.innerHTML = `
                 <div class="no-results">
-                    <p>没有找到相关文章</p>
-                    ${currentTag !== '全部' ? '<p>请尝试选择其他标签或查看"全部"分类</p>' : ''}
+                    <p>在 "${currentSubject}" 分类下没有找到相关文章</p>
+                    ${currentSubject !== '全部' ? '<p>请尝试选择其他分类或查看"全部"</p>' : ''}
                 </div>
             `;
             return;
@@ -162,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 生成文章卡片
         paginatedArticles.forEach((article, index) => {
-            // 处理标签
+            // 处理标签 (逻辑不变)
             let tagsHTML = '';
             if (article.tags) {
                 const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
@@ -170,23 +163,33 @@ document.addEventListener('DOMContentLoaded', function() {
                     `<span class="paper-tag">${tag.trim()}</span>`
                 ).join('');
             }
+
+            // --- 新增：处理 Subject ---
+            const subjectHTML = article.Subject ? `<span class="paper-subject">分类: ${article.Subject}</span>` : '';
+            
+            // --- 新增：处理期刊信息 ---
+            const journalHTML = article.journal ? `<span class="meta-item">期刊: ${article.journal}</span>` : '';
             
             const card = document.createElement('div');
             card.className = 'paper-card';
             
             card.innerHTML = `
                 <div class="paper-header">
-                    <!-- Voting section removed -->
                     <div class="paper-content">
                         <h3 class="paper-title">${article.title}</h3>
                         <p class="paper-cn-title">【${article.titleCn || article.title}】</p>
                         <div class="paper-meta">
                             <span class="meta-item">发布: ${article.date || article.publishDate || '未知日期'}</span>
                             ${article.doi ? `<span class="meta-item">DOI: ${article.doi}</span>` : ''}
+                            <!-- 新增：显示期刊信息 -->
+                            ${journalHTML}
+                            <!-- 显示 Subject -->
+                            ${subjectHTML ? `<span class="meta-item paper-subject-meta">${subjectHTML}</span>` : ''} 
                         </div>
-                        <p class="paper-abstract">${article.abstract || article.interpretationCn || ''}</p>
+                        <p class="paper-abstract">${article.interpretationCn || article.abstract || '暂无解读或摘要'}</p> 
                         <div class="paper-footer">
                             <div class="paper-tags">
+                                <!-- 显示标签 -->
                                 ${tagsHTML}
                             </div>
                             <div class="paper-actions">
@@ -205,7 +208,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function generatePagination() {
         if (!pagination) return;
         
-        const filteredArticles = filterArticlesByTag(allArticles, currentTag);
+        // --- 修改：基于 Subject 筛选结果计算分页 ---
+        const filteredArticles = filterArticlesBySubject(allArticles, currentSubject);
         const totalPages = Math.ceil(filteredArticles.length / articlesPerPage);
         
         pagination.innerHTML = '';
@@ -213,7 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // 如果只有一页，不显示分页
         if (totalPages <= 1) return;
         
-        // 生成页码
+        // 生成页码 (逻辑不变)
         for (let i = 1; i <= totalPages; i++) {
             const pageItem = document.createElement('div');
             pageItem.className = `page-item ${i === currentPage ? 'active' : ''}`;
@@ -221,9 +225,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             pageItem.addEventListener('click', () => {
                 currentPage = i;
-                renderArticles(currentPage);
+                renderArticles(currentPage); // 重新渲染当前页
                 
-                // 更新活动页
+                // 更新活动页样式 (逻辑不变)
                 const pageItems = pagination.querySelectorAll('.page-item');
                 pageItems.forEach(item => {
                     item.classList.remove('active');

@@ -3,7 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>追踪科学前沿 - 最新科研数据</title>
+    <title>追踪科学前沿 - 最新出版科研数据</title>
+    <!-- 网站图标 - 使用Flask的url_for指向static/icons目录 -->
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
+    <!-- 字体和样式引用 -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -12,15 +18,17 @@
     <section class="page-header">
         <div class="container">
             <h1 class="page-title">用<span>中文</span>追踪科学前沿</h1>
-            <p class="page-description">旨在帮你快速了解世界上最新发布的科研数据。</p>
+            <p class="page-description">旨在帮你快速了解世界上最新出版的科研数据。</p>
         </div>
     </section>
 
     <!-- 筛选标签 -->
     <section class="filter-bar">
         <div class="container">
-            <div class="tags-filter" id="tagsFilter">
-                <!-- 标签将由 JavaScript 动态生成 -->
+            <!-- Removed h2 title -->
+            <div id="subjectFilter" class="filter-tags"> 
+                <div class="tag-pill active" data-tag="全部">全部</div>
+                <!-- JavaScript will populate other filters here -->
             </div>
         </div>
     </section>
@@ -83,8 +91,27 @@
     </div>
 
     <footer class="footer">
-        <div class="container">
-            <p class="copyright">Kaiyang Jia &copy; 2025</p>
+        <div class="container footer-container">
+            <div class="footer-section footer-info">
+                <div class="footer-logo">科研数据追踪</div>
+                <p class="footer-description">追踪世界前沿科研数据，提供中文解读</p>
+            </div>
+            <div class="footer-section footer-links">
+                <h4>快速链接</h4>
+                <ul>
+                    <li><a href="https://www.nature.com/sdata/" target="_blank">Nature Scientific Data</a></li>
+                    <li><a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank">GitHub </a></li>
+                </ul>
+            </div>
+            <div class="footer-section footer-contact">
+                <h4>联系方式</h4>
+                <p><a href="mailto:jiakaiyang96@gmail.com">jiakaiyang96@gmail.com</a></p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div class="container">
+                <p class="copyright">Copyright &copy; 2025 Kaiyang Jia | All rights reserved.</p>
+            </div>
         </div>
     </footer>
 
