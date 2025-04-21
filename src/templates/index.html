@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>追踪科学前沿 - 最新出版科研数据</title>
+    <title>追踪科学前沿 - 最新出版的科研数据</title>
     <!-- 网站图标 - 使用Flask的url_for指向static/icons目录 -->
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
@@ -17,7 +17,7 @@
     <!-- 页面标题 -->
     <section class="page-header">
         <div class="container">
-            <h1 class="page-title">用<span>中文</span>追踪科学前沿</h1>
+            <h1 class="page-title">用<span>中文</span>追踪科学数据前沿</h1>
             <p class="page-description">旨在帮你快速了解世界上最新出版的科研数据。</p>
         </div>
     </section>
@@ -93,14 +93,15 @@
     <footer class="footer">
         <div class="container footer-container">
             <div class="footer-section footer-info">
-                <div class="footer-logo">科研数据追踪</div>
-                <p class="footer-description">追踪世界前沿科研数据，提供中文解读</p>
+                <div class="footer-logo">AI4Science</div>
+                <p class="footer-description">基于RSS订阅，DeepSeek提供中文翻译与总结。inspired by <a href="https://zeli.app/zh" target="_blank">zeli</a>.</p>
             </div>
             <div class="footer-section footer-links">
                 <h4>快速链接</h4>
                 <ul>
                     <li><a href="https://www.nature.com/sdata/" target="_blank">Nature Scientific Data</a></li>
                     <li><a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank">GitHub </a></li>
+                    <li><a href="{{ url_for('feedback') }}">提供反馈</a></li>
                 </ul>
             </div>
             <div class="footer-section footer-contact">

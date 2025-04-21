@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 import logging
+import datetime
+import csv
 
 # 配置日志
 logging.basicConfig(
@@ -21,6 +23,9 @@ app = Flask(__name__, template_folder='src/templates')
 # 全局变量存储数据
 CACHE_FILE = os.path.join('get_data', 'nature_data_articles.json') # Updated path
 articles_data = []
+
+# 反馈存储文件
+FEEDBACK_FILE = 'user_feedback.csv'
 
 def load_cached_data():
     """
@@ -130,6 +135,61 @@ def get_article(index):
         return jsonify(articles_data[index])
     except IndexError:
         return jsonify({'error': '文章不存在'}), 404
+
+@app.route('/feedback')
+def feedback():
+    """
+    反馈页面路由
+    """
+    return render_template('feedback.html')
+
+@app.route('/submit_feedback', methods=['POST'])
+def submit_feedback():
+    """
+    处理反馈提交
+    """
+    try:
+        # 获取表单数据
+        title = request.form.get('title', '')
+        content = request.form.get('content', '')
+        name = request.form.get('name', '匿名用户')
+        contact = request.form.get('contact', '')
+        
+        # 确认必填字段
+        if not title or not content:
+            return jsonify({'success': False, 'message': '标题和内容为必填项'})
+        
+        # 创建反馈记录
+        feedback_data = {
+            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'title': title,
+            'content': content,
+            'name': name,
+            'contact': contact
+        }
+        
+        # 确保反馈文件目录存在
+        os.makedirs(os.path.dirname(FEEDBACK_FILE) if os.path.dirname(FEEDBACK_FILE) else '.', exist_ok=True)
+        
+        # 检查文件是否存在，以决定是否需要写入标题行
+        file_exists = os.path.isfile(FEEDBACK_FILE)
+        
+        # 写入CSV文件
+        with open(FEEDBACK_FILE, 'a', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['timestamp', 'title', 'content', 'name', 'contact']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            if not file_exists:
+                writer.writeheader()  # 如果是新文件，写入表头
+            
+            writer.writerow(feedback_data)
+        
+        logger.info(f"成功保存来自 {name} 的反馈: {title}")
+        return jsonify({'success': True, 'message': '感谢您的反馈！'})
+        
+    except Exception as e:
+        logger.error(f"保存反馈时出错: {str(e)}")
+        return jsonify({'success': False, 'message': f'服务器错误: {str(e)}'}), 500
 
 if __name__ == '__main__':
     # 确保启动时有数据
