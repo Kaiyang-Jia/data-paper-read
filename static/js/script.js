@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- 修改：当前筛选条件改为 Subject ---
     let currentSubject = '全部'; 
     let currentPage = 1;
-    const articlesPerPage = 6;
+    const articlesPerPage = 10;  // 增加每页显示的文章数量，因为按日期分组后可能会导致每页实际文章数减少
 
     // 加载初始数据
     loadArticlesData();
@@ -49,7 +49,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 showLoading(false);
                 
                 allArticles = data || [];
-                allArticles.reverse(); // 反转数组，使最新的文章在前
+                
+                // 确保文章有正确的日期格式
+                allArticles = allArticles.map(article => {
+                    const publishDate = article.date || article.publishDate || '';
+                    return {
+                        ...article,
+                        publishDate: publishDate,
+                        // 标准化日期格式，用于排序和分组
+                        normalizedDate: standardizeDate(publishDate)
+                    };
+                });
+                
+                // 按日期降序排序（最新的在前）
+                allArticles.sort((a, b) => {
+                    if (!a.normalizedDate) return 1;
+                    if (!b.normalizedDate) return -1;
+                    return new Date(b.normalizedDate) - new Date(a.normalizedDate);
+                });
                 
                 // --- 修改：生成 Subject 筛选器 ---
                 generateSubjectFilters(allArticles);
@@ -65,6 +82,48 @@ document.addEventListener('DOMContentLoaded', function() {
                 showLoading(false);
                 showMessage('获取数据失败，请稍后再试或点击"刷新数据"按钮', 'danger');
             });
+    }
+    
+    // 标准化日期格式函数
+    function standardizeDate(dateStr) {
+        if (!dateStr) return '';
+        
+        // 尝试解析日期
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+            // 如果解析失败，尝试其他格式
+            const formats = [
+                /(\d{4})[/-](\d{1,2})[/-](\d{1,2})/, // YYYY-MM-DD 或 YYYY/MM/DD
+                /(\d{1,2})[/-](\d{1,2})[/-](\d{4})/  // DD-MM-YYYY 或 DD/MM/YYYY
+            ];
+            
+            for (const format of formats) {
+                const match = dateStr.match(format);
+                if (match) {
+                    // 根据格式构造日期
+                    if (format === formats[0]) {
+                        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+                    } else {
+                        return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+                    }
+                }
+            }
+            return '';
+        }
+        
+        // 返回标准格式 YYYY-MM-DD
+        return date.toISOString().split('T')[0];
+    }
+    
+    // 格式化日期显示
+    function formatDateForDisplay(dateStr) {
+        if (!dateStr) return '未知日期';
+        
+        const normalizedDate = standardizeDate(dateStr);
+        if (!normalizedDate) return dateStr; // 如果无法标准化，返回原始字符串
+        
+        const [year, month, day] = normalizedDate.split('-');
+        return `${year}/${month}/${day}`;
     }
 
     // --- 修改：生成 Subject 筛选器 ---
@@ -153,54 +212,83 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // 生成文章卡片
-        paginatedArticles.forEach((article, index) => {
-            // 处理标签 (逻辑不变)
-            let tagsHTML = '';
-            if (article.tags) {
-                const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
-                tagsHTML = tagsArray.map(tag => 
-                    `<span class="paper-tag">${tag.trim()}</span>`
-                ).join('');
+        // 按日期分组文章
+        const articlesByDate = {};
+        paginatedArticles.forEach(article => {
+            const dateStr = article.normalizedDate || '未知日期';
+            if (!articlesByDate[dateStr]) {
+                articlesByDate[dateStr] = [];
             }
+            articlesByDate[dateStr].push(article);
+        });
+        
+        // 按日期降序排列日期
+        const sortedDates = Object.keys(articlesByDate).sort((a, b) => {
+            if (a === '未知日期') return 1;
+            if (b === '未知日期') return -1;
+            return new Date(b) - new Date(a);
+        });
+        
+        // 生成文章卡片，按日期分组
+        sortedDates.forEach(dateStr => {
+            // 添加日期分隔标题
+            const dateHeader = document.createElement('div');
+            dateHeader.className = 'date-separator';
+            dateHeader.innerHTML = `<h3>${formatDateForDisplay(dateStr)}</h3>`;
+            articlesList.appendChild(dateHeader);
+            
+            // 添加该日期下的所有文章
+            const articlesContainer = document.createElement('div');
+            articlesContainer.className = 'date-articles-group';
+            
+            articlesByDate[dateStr].forEach(article => {
+                // 处理标签 (逻辑不变)
+                let tagsHTML = '';
+                if (article.tags) {
+                    const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
+                    tagsHTML = tagsArray.map(tag => 
+                        `<span class="paper-tag">${tag.trim()}</span>`
+                    ).join('');
+                }
 
-            // --- 新增：处理 Subject ---
-            const subjectHTML = article.Subject ? `<span class="paper-subject">分类: ${article.Subject}</span>` : '';
-            
-            // --- 新增：处理期刊信息 ---
-            const journalHTML = article.journal ? `<span class="meta-item">期刊: ${article.journal}</span>` : '';
-            
-            const card = document.createElement('div');
-            card.className = 'paper-card';
-            
-            card.innerHTML = `
-                <div class="paper-header">
-                    <div class="paper-content">
-                        <h3 class="paper-title">${article.title}</h3>
-                        <p class="paper-cn-title">【${article.titleCn || article.title}】</p>
-                        <div class="paper-meta">
-                            <span class="meta-item">发布: ${article.date || article.publishDate || '未知日期'}</span>
-                            ${article.doi ? `<span class="meta-item">DOI: ${article.doi}</span>` : ''}
-                            <!-- 新增：显示期刊信息 -->
-                            ${journalHTML}
-                            <!-- 显示 Subject -->
-                            ${subjectHTML ? `<span class="meta-item paper-subject-meta">${subjectHTML}</span>` : ''} 
-                        </div>
-                        <p class="paper-abstract">${article.interpretationCn || article.abstract || '暂无解读或摘要'}</p> 
-                        <div class="paper-footer">
-                            <div class="paper-tags">
-                                <!-- 显示标签 -->
-                                ${tagsHTML}
+                // --- 新增：处理 Subject ---
+                const subjectHTML = article.Subject ? `<span class="paper-subject">分类: ${article.Subject}</span>` : '';
+                
+                // --- 新增：处理期刊信息 ---
+                const journalHTML = article.journal ? `<span class="meta-item journal-badge">${article.journal}</span>` : '';
+                
+                const card = document.createElement('div');
+                card.className = 'paper-card';
+                
+                card.innerHTML = `
+                    <div class="paper-header">
+                        <div class="paper-content">
+                            <h3 class="paper-title">${article.title}</h3>
+                            <p class="paper-cn-title">【${article.titleCn || article.title}】</p>
+                            <div class="paper-meta">
+                                ${journalHTML}
+                                ${article.doi ? `<span class="meta-item doi-badge">DOI: ${article.doi}</span>` : ''}
+                                <!-- 显示 Subject -->
+                                ${subjectHTML ? `<span class="meta-item paper-subject-meta">${subjectHTML}</span>` : ''} 
                             </div>
-                            <div class="paper-actions">
-                                <a href="${article.url}" class="paper-link" target="_blank">查看原文</a>
+                            <p class="paper-abstract">${article.interpretationCn || article.abstract || '暂无解读或摘要'}</p> 
+                            <div class="paper-footer">
+                                <div class="paper-tags">
+                                    <!-- 显示标签 -->
+                                    ${tagsHTML}
+                                </div>
+                                <div class="paper-actions">
+                                    <a href="${article.url}" class="paper-link" target="_blank">查看原文</a>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+                
+                articlesContainer.appendChild(card);
+            });
             
-            articlesList.appendChild(card);
+            articlesList.appendChild(articlesContainer);
         });
     }
 

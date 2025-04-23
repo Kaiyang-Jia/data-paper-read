@@ -1,24 +1,26 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-数据处理流水线管理模块
+数据处理流水线
 
 整合数据爬取、处理和服务的完整流程，提供一体化的数据更新与维护功能。
 主要功能：
-1. 从Nature RSS源爬取最新科研数据论文
+1. 从多个期刊RSS源爬取最新科研数据论文
 2. 使用NLP处理翻译标题、生成解读及标签
 3. 准备并导出处理好的数据到主应用
 
 使用方法:
-python data_pipeline.py [--full-update] [--serve]
+python data_pipeline.py [--full-update]
 """
 
 import os
+import sys
 import argparse
 import logging
-import shutil
-import time
 from datetime import datetime
+import shutil
+import csv
+import json
 
 # 配置日志
 logging.basicConfig(
@@ -28,140 +30,159 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 导入本地模块
+# --- 修改开始: 定义文件路径相对于脚本位置 ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RAW_PAPERS_CSV = os.path.join(SCRIPT_DIR, "raw_papers.csv")
+PROCESSED_PAPERS_CSV = os.path.join(SCRIPT_DIR, "processed_papers.csv")
+OUTPUT_JSON = os.path.join(SCRIPT_DIR, "nature_data_articles.json")
+BACKUP_FOLDER = os.path.join(SCRIPT_DIR, "backups")
+# --- 修改结束 ---
+
+# 尝试导入本地模块 (使用相对导入)
 try:
-    # 尝试使用当前实际的文件名导入
-    from crawler import NatureRSSCrawler
-    from process import NLPProcessor
-    logger.info("成功导入 crawler 和 process 模块")
+    from .crawler import RSSCrawler
+    from .process import NLPProcessor
 except ImportError as e:
     logger.error(f"导入本地模块失败: {e}")
-    # 如果需要，可以在这里添加备用导入逻辑或退出
-    # 例如，尝试导入重命名后的文件
-    # try:
-    #     from nature_rss_crawler import NatureRSSCrawler
-    #     from nlp_processor import NLPProcessor
-    #     logger.info("成功导入 nature_rss_crawler 和 nlp_processor 模块")
-    # except ImportError:
-    #     logger.critical("无法找到必要的爬虫或处理模块，请检查文件是否存在且名称正确！")
-    #     # 可以选择退出程序
-    #     # import sys
-    #     # sys.exit(1)
-    # 设置为 None 或引发异常，以便后续代码知道导入失败
-    NatureRSSCrawler = None
-    NLPProcessor = None
 
-def backup_data_files():
+
+def backup_files():
     """备份现有数据文件"""
-    try:
-        backup_dir = "backups"
-        if not os.path.exists(backup_dir):
-            os.makedirs(backup_dir)
-            
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # 备份原始数据文件
-        if os.path.exists("raw_papers.csv"):
-            backup_file = f"{backup_dir}/raw_papers_{timestamp}.csv"
-            shutil.copy2("raw_papers.csv", backup_file)
-            logger.info(f"原始数据文件已备份: {backup_file}")
-            
-        # 备份处理后的数据文件
-        if os.path.exists("processed_papers.csv"):
-            backup_file = f"{backup_dir}/processed_papers_{timestamp}.csv"
-            shutil.copy2("processed_papers.csv", backup_file)
-            logger.info(f"处理后数据文件已备份: {backup_file}")
-            
-        return True
-    except Exception as e:
-        logger.error(f"备份数据文件失败: {e}")
-        return False
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # --- 修改开始: 使用定义的备份文件夹路径 ---
+    backup_folder = BACKUP_FOLDER
+    # --- 修改结束 ---
 
-def export_to_main_app():
-    """将处理好的数据导出为JSON文件到get_data目录"""
+    # 确保备份文件夹存在
+    if not os.path.exists(backup_folder):
+        os.makedirs(backup_folder)
+
+    # 备份文件列表
+    # --- 修改开始: 使用定义的文件路径常量 ---
+    files_to_backup = [
+        {"source": RAW_PAPERS_CSV, "target": os.path.join(backup_folder, f"raw_papers_{timestamp}.csv")},
+        {"source": PROCESSED_PAPERS_CSV, "target": os.path.join(backup_folder, f"processed_papers_{timestamp}.csv")},
+        {"source": OUTPUT_JSON, "target": os.path.join(backup_folder, f"nature_data_articles_{timestamp}.json")}
+    ]
+    # --- 修改结束 ---
+
+    # 执行备份
+    for file_info in files_to_backup:
+        source = file_info["source"]
+        target = file_info["target"]
+        if os.path.exists(source):
+            shutil.copy2(source, target)
+            logger.info(f"数据文件已备份: {target}")
+    
+    return True
+
+
+def convert_csv_to_json():
+    """将处理后的CSV数据转换为JSON格式"""
+    # --- 修改开始: 使用定义的文件路径常量 ---
+    csv_file = PROCESSED_PAPERS_CSV
+    json_file = OUTPUT_JSON
+    # --- 修改结束 ---
+
+    logger.info(f"步骤4: 转换CSV到JSON格式: {csv_file} -> {json_file}")
+    
     try:
-        src_file = "processed_papers.csv"
-        if not os.path.exists(src_file):
-            logger.error(f"源文件不存在: {src_file}")
-            return False
-            
-        # 目标文件路径 (当前目录下)
-        target_file = "nature_data_articles.json"
-        
-        # 转换CSV到JSON并导出
-        import csv
-        import json
-        
+        # 读取CSV
         articles = []
-        with open(src_file, "r", encoding="utf-8") as f:
+        # --- 修改开始: 使用定义的文件路径常量 ---
+        with open(csv_file, 'r', encoding='utf-8') as f:
+        # --- 修改结束 ---
             reader = csv.DictReader(f)
             for row in reader:
-                # 转换标签字符串为列表
-                if "tags" in row and row["tags"]:
-                    row["tags"] = [tag.strip() for tag in row["tags"].split(",")]
+                # 处理标签字段
+                if row.get('tags'):
+                    row['tags'] = [tag.strip() for tag in row['tags'].split(',') if tag.strip()]
+                else:
+                    row['tags'] = []
+                    
+                # 确保日期字段格式统一
+                if 'publishDate' in row:
+                    row['date'] = row['publishDate']
+                    
+                # 添加到结果列表
                 articles.append(row)
                 
-        # 写入JSON文件
-        with open(target_file, "w", encoding="utf-8") as f:
-            json.dump(articles, f, ensure_ascii=False, indent=4)
+        # 写入JSON
+        # --- 修改开始: 使用定义的文件路径常量 ---
+        with open(json_file, 'w', encoding='utf-8') as f:
+        # --- 修改结束 ---
+            json.dump(articles, f, ensure_ascii=False, indent=2)
             
-        logger.info(f"数据已成功导出到: {target_file}")
-        logger.info(f"共导出 {len(articles)} 篇论文数据")
-        return True
+        logger.info(f"成功转换 {len(articles)} 条记录到 {json_file}")
+        return len(articles)
     except Exception as e:
-        logger.error(f"导出数据失败: {e}")
-        return False
+        logger.error(f"转换CSV到JSON失败: {e}")
+        return 0
 
-def run_full_pipeline(): # Removed serve=False parameter
-    """执行完整数据处理流水线"""
+
+def run_pipeline(full_update=False):
+    """运行数据处理流水线"""
     logger.info("开始执行数据处理流水线...")
     
-    # 步骤1: 备份现有数据文件
+    # 步骤1: 备份现有数据
     logger.info("步骤1: 备份现有数据")
-    backup_data_files()
+    backup_files()
     
     # 步骤2: 爬取最新数据
     logger.info("步骤2: 爬取最新数据")
     try:
-        crawler = NatureRSSCrawler()
-        articles = crawler.crawl()
-        logger.info(f"成功爬取 {len(articles)} 篇论文")
+        crawler = RSSCrawler()
+        crawler.crawl()
+        
+        # 检查是否有新数据，如果没有且不是全量更新，则跳过后续步骤
+        if crawler.last_added_count == 0 and not full_update:
+            logger.info("没有发现新数据，跳过后续处理步骤")
+            return True
     except Exception as e:
         logger.error(f"爬取数据失败: {e}")
         return False
-    
+        
     # 步骤3: NLP处理数据
-    logger.info("步骤3: NLP处理数据")
+    logger.info("步骤3: 处理数据 (NLP处理)")
     try:
+        # --- 修改开始: 传递正确的输入输出路径给 NLPProcessor ---
+        # 注意: NLPProcessor 内部也需要修改以接受这些路径参数
+        # 这里暂时假设 NLPProcessor 构造函数或 process_papers 方法可以接受路径
+        # 如果 NLPProcessor 内部写死了文件名，则需要修改 NLPProcessor
         processor = NLPProcessor()
-        success = processor.process_papers()
-        if not success:
-            logger.error("NLP处理数据失败")
-            return False
+        # 假设 process_papers 接受 input_csv 和 output_csv 参数
+        # processor.process_papers(input_csv=RAW_PAPERS_CSV, output_csv=PROCESSED_PAPERS_CSV)
+        # 或者修改 NLPProcessor 的 __init__
+        processor.input_csv = RAW_PAPERS_CSV
+        processor.output_csv = PROCESSED_PAPERS_CSV
+        processor.backup_folder = BACKUP_FOLDER # 确保备份也使用正确的路径
+        # --- 修改结束 ---
+        processor.process_papers()
     except Exception as e:
-        logger.error(f"NLP处理数据异常: {e}")
+        logger.error(f"处理数据失败: {e}")
         return False
-
-    # 步骤4: 导出到JSON文件
-    logger.info("步骤4: 导出数据到JSON文件")
-    export_success = export_to_main_app()
-    if not export_success:
-        logger.warning("导出数据到JSON文件失败")
-    
-    logger.info("数据处理流水线执行完毕")
+        
+    # 步骤4: 转换CSV到JSON
+    count = convert_csv_to_json()
+    if count == 0:
+        logger.error("CSV到JSON转换失败或无数据")
+        return False
+        
+    logger.info(f"数据处理流水线执行完成! 共处理 {count} 条记录")
     return True
 
-def main():
-    """主函数"""
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description="Nature科研数据论文处理流水线")
-    parser.add_argument("--full-update", action="store_true", help="执行完整的数据更新流程")
-    args = parser.parse_args()
-    
-    if args.full_update:  # 修正 full-update 为 full_update（下划线而非连字符）
-        run_full_pipeline()
-    else:
-        logger.info("使用 --full-update 参数执行完整数据处理流程")
 
 if __name__ == "__main__":
-    main()
+    # 命令行参数
+    parser = argparse.ArgumentParser(description="数据论文处理流水线")
+    parser.add_argument("--full-update", action="store_true", help="执行全量更新而非增量更新")
+    args = parser.parse_args()
+    
+    # 运行流水线
+    success = run_pipeline(full_update=args.full_update)
+    
+    if not success:
+        logger.error("流水线执行失败")
+        sys.exit(1)
+    else:
+        logger.info("数据流水线处理成功完成！")

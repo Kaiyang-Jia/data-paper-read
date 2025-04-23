@@ -7,8 +7,9 @@ NLP处理模块
 1. 英文标题翻译成中文
 2. 生成中文解读摘要
 3. 基于内容生成相关标签
+4. 按主题分类数据论文
 
-输入：raw_papers.csv（原始爬取数据）
+输入：raw_papers.csv（原始爬取数据，包含多个期刊）
 输出：processed_papers.csv（处理后的完整数据）
 """
 
@@ -19,6 +20,8 @@ from openai import OpenAI
 from tqdm import tqdm
 import time
 import random
+import shutil
+from datetime import datetime
 
 # 配置日志
 logging.basicConfig(
@@ -28,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- 新增：定义预设分类 (Subject) ---
+# --- 预设分类 (Subject) ---
 PREDEFINED_SUBJECTS = [
     "生物技术",
     "气候科学",
@@ -50,20 +53,29 @@ PREDEFINED_SUBJECTS = [
     "科学界",
     "社会科学",
     "动物学",
-    "其他"  # 添加一个“其他”类别以防万一
+    "其他"  # 添加一个"其他"类别以防万一
 ]
+
 class NLPProcessor:
     """科研论文NLP处理类"""
     
-    def __init__(self):
-        """初始化NLP处理器"""
-        self.input_csv = "raw_papers.csv"
-        self.output_csv = "processed_papers.csv"
+    # --- 修改开始: 移除硬编码的文件名，允许外部设置 ---
+    # def __init__(self):
+    #     """初始化NLP处理器"""
+    #     self.input_csv = "raw_papers.csv"
+    #     self.output_csv = "processed_papers.csv"
+    #     self.api_client = self._init_deepseek_client()
+    #     self.subjects = PREDEFINED_SUBJECTS
+    #     self.backup_folder = "backups" # 备份文件夹
+
+    def __init__(self, input_csv="raw_papers.csv", output_csv="processed_papers.csv", backup_folder="backups"):
+        """初始化NLP处理器，允许指定文件路径"""
+        self.input_csv = input_csv
+        self.output_csv = output_csv
         self.api_client = self._init_deepseek_client()
-        # --- 新增：将分类列表存为实例属性 ---
         self.subjects = PREDEFINED_SUBJECTS
-        # --- 新增：默认期刊来源 ---
-        self.default_journal = "Scientific Data"
+        self.backup_folder = backup_folder # 备份文件夹
+    # --- 修改结束 ---
 
     def _init_deepseek_client(self):
         """初始化DeepSeek API客户端"""
@@ -94,13 +106,11 @@ class NLPProcessor:
             prompt = f"基于以下论文描述，提供一段70-90字的简洁学术性中文总结，聚焦数据集的制作过程和潜在应用价值，采用适合研究人员的正式语气，仅返回总结内容，不要添加任何说明或注释：\n{text}"
         elif task == "generate_tags":
             prompt = f"基于以下论文描述，为这篇科研数据论文生成3-5个简洁的中文标签，使用逗号分隔，适合学术分类，仅返回标签内容，不要添加任何说明或注释：\n{text}"
-        # --- 新增：处理 classify 任务 ---
         elif task == "classify":
             subject_list_str = ", ".join(self.subjects)
             prompt = f"请根据以下论文信息（优先参考摘要，其次是标题），从下列预定义的分类 (Subject) 中选择一个最相关的类别：[{subject_list_str}]。请仅返回最合适的中文类别名称，不要添加任何说明、标点或注释。\n\n论文信息：\n{text}"
             system_content = "你是一位专业的科研文献分类助手。" # 针对分类任务调整 System Prompt
 
-        # --- 新增：确保处理 classify 任务 ---
         if not prompt:
              logger.error(f"未知的 AI 任务类型: {task}")
              return ""
@@ -117,7 +127,7 @@ class NLPProcessor:
                 )
                 result = response.choices[0].message.content.strip()
                 
-                # --- 新增：对分类结果进行校验 ---
+                # 对分类结果进行校验
                 if task == "classify":
                     # 移除可能的标点符号
                     result = result.replace("，", "").replace(",", "").replace("。", "").strip()
@@ -133,7 +143,7 @@ class NLPProcessor:
                                 break
                         if not found:
                             logger.warning(f"无法匹配分类 '{result}'，标记为 '其他'")
-                            result = "其他" # 默认归类为“其他”
+                            result = "其他" # 默认归类为"其他"
                 return result
             except Exception as e:
                 logger.error(f"API调用失败 (尝试 {attempt+1}/{retries}): {e}")
@@ -146,8 +156,36 @@ class NLPProcessor:
                     logger.error("达到最大重试次数，放弃处理")
                     return ""
     
+    def backup_files(self):
+        """创建输入和输出文件的备份"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # 确保备份文件夹存在
+        if not os.path.exists(self.backup_folder):
+            os.makedirs(self.backup_folder)
+            logger.info(f"已创建备份文件夹: {self.backup_folder}")
+            
+        # 备份输入文件（如果存在）
+        if os.path.exists(self.input_csv):
+            # --- 修改开始: 使用 self.backup_folder ---
+            input_backup = os.path.join(self.backup_folder, f"raw_papers_{timestamp}.csv")
+            # --- 修改结束 ---
+            shutil.copy2(self.input_csv, input_backup)
+            logger.info(f"已创建输入文件备份: {input_backup}")
+            
+        # 备份输出文件（如果存在）
+        if os.path.exists(self.output_csv):
+            # --- 修改开始: 使用 self.backup_folder ---
+            output_backup = os.path.join(self.backup_folder, f"processed_papers_{timestamp}.csv")
+            # --- 修改结束 ---
+            shutil.copy2(self.output_csv, output_backup)
+            logger.info(f"已创建输出文件备份: {output_backup}")
+    
     def process_papers(self):
         """处理论文数据，包括处理新论文和补全旧论文的缺失信息"""
+        # 创建备份
+        self.backup_files()
+        
         # 检查文件是否存在
         if not os.path.exists(self.input_csv):
             logger.error(f"输入文件不存在: {self.input_csv}")
@@ -193,9 +231,8 @@ class NLPProcessor:
         
         # 准备最终输出的数据列表和头部
         final_output_data = []
-        # --- 修改：在 headers 中添加 journal ---
         headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
-                   "url", "authors", "tags", "Subject", "journal", "abstract"] # 添加了 "journal"
+                   "url", "authors", "tags", "Subject", "journal", "abstract"]
         
         # 标记是否有数据被修改或添加
         data_changed = False
@@ -246,7 +283,7 @@ class NLPProcessor:
                     needs_update = True
                     time.sleep(1) # API call delay
 
-            # --- 新增：检查 Subject 分类 ---
+            # 检查 Subject 分类
             if text_for_nlp and not row.get("Subject"):
                 logger.info(f"为 DOI {doi} 补全 Subject 分类...")
                 subject = self.call_ai_api(text_for_nlp, "classify")
@@ -255,11 +292,15 @@ class NLPProcessor:
                     needs_update = True
                     time.sleep(1) # API call delay
 
-            # --- 新增：检查 journal 字段 ---
-            if not row.get("journal"):
-                row["journal"] = self.default_journal
+            # 检查期刊字段，从原始数据更新或保持不变
+            if doi in input_doi_map and input_doi_map[doi].get("journal"):
+                if row.get("journal") != input_doi_map[doi].get("journal"):
+                    row["journal"] = input_doi_map[doi].get("journal")
+                    data_changed = True
+                    logger.info(f"为 DOI {doi} 更新期刊信息为 {row['journal']}")
+            elif not row.get("journal"):  # 如果没有期刊信息，设为空字符串而不是默认值
+                row["journal"] = ""
                 data_changed = True
-                logger.info(f"为 DOI {doi} 补充默认期刊信息")
             
             if needs_update:
                 data_changed = True
@@ -282,7 +323,7 @@ class NLPProcessor:
             title = data.get("title", "")
             abstract = data.get("abstract", "")
             
-            # --- 修改：初始化 processed_item，包含 journal ---
+            # 初始化 processed_item，包含原始数据的期刊名称
             processed_item = {
                 "title": title,
                 "publishDate": data.get("publishDate", ""),
@@ -294,7 +335,7 @@ class NLPProcessor:
                 "interpretationCn": "",
                 "tags": data.get("tags", ""), # 使用原始 tags (如果有)
                 "Subject": "", # 初始化 Subject 字段
-                "journal": data.get("journal", self.default_journal) # 添加 journal 字段，默认为 Scientific Data
+                "journal": data.get("journal", "") # 使用原始期刊数据，不设默认值
             }
             
             # 如果有内容，进行NLP处理
@@ -319,7 +360,7 @@ class NLPProcessor:
                     processed_item["tags"] = tags
                     time.sleep(1)
 
-                # --- 新增：生成 Subject 分类 ---
+                # 生成 Subject 分类
                 subject = self.call_ai_api(text_for_nlp, "classify")
                 processed_item["Subject"] = subject # 存储分类结果
                 time.sleep(1)
@@ -342,7 +383,6 @@ class NLPProcessor:
         # 写入输出CSV (覆盖写入)
         try:
             with open(self.output_csv, "w", encoding="utf-8", newline="") as f:
-                # --- 确保使用更新后的 headers ---
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writeheader()
                 
@@ -360,7 +400,15 @@ class NLPProcessor:
 
 def main():
     """主函数"""
-    processor = NLPProcessor()
+    # --- 修改开始: 如果直接运行 process.py，需要提供正确的路径 ---
+    # 获取脚本所在目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    input_file = os.path.join(script_dir, "raw_papers.csv")
+    output_file = os.path.join(script_dir, "processed_papers.csv")
+    backup_dir = os.path.join(script_dir, "backups")
+
+    processor = NLPProcessor(input_csv=input_file, output_csv=output_file, backup_folder=backup_dir)
+    # --- 修改结束 ---
     success = processor.process_papers()
     
     if success:

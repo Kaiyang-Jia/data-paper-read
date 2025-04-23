@@ -564,3 +564,57 @@ body {
         margin: 5% auto;
     }
 }
+
+/* 日期分隔器样式 */
+.date-separator {
+    position: relative;
+    margin: 1.5rem 0 1rem;
+    text-align: left;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--background-light);
+}
+
+.date-separator h3 {
+    display: inline-block;
+    background-color: transparent;
+    color: var(--text);
+    padding: 0.4rem 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* 同一日期下的文章组 */
+.date-articles-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* 期刊标识 */
+.journal-badge {
+    background-color: var(--nature-light);
+    color: var(--nature);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* DOI标识 */
+.doi-badge {
+    font-size: 0.75rem;
+    color: var(--subtext);
+}
+
+/* 响应式设计补充 */
+@media (max-width: 768px) {
+    .date-separator {
+        margin: 1.2rem 0 0.8rem;
+    }
+    
+    .date-separator h3 {
+        font-size: 1rem;
+        padding: 0.3rem 0;
+    }
+}

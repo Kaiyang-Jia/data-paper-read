@@ -95,27 +95,27 @@ pip install -r requirements.txt
 
 系统采用了以下预定义的学科分类体系，用于对论文进行自动分类：
 
-- 生物技术
-- 气候科学
-- 计算生物学与生物信息学
-- 疾病
-- 生态学
-- 工程学
-- 环境科学
-- 环境社会科学
-- 遗传学
-- 医疗保健
-- 水文学
-- 数学与计算
-- 医学研究
-- 微生物学
-- 神经科学
-- 海洋科学
-- 植物科学
-- 科学界
-- 社会科学
-- 动物学
-- 其他
+Biotechnology - 生物技术
+Climate Science - 气候科学
+Computational Biology and Bioinformatics - 计算生物学与生物信息学
+Diseases - 疾病
+Ecology - 生态学
+Engineering - 工程学
+Environmental Science - 环境科学
+Environmental Social Sciences - 环境社会科学
+Genetics - 遗传学
+Health Care - 医疗保健
+Hydrology - 水文学
+Mathematics and Computing - 数学与计算
+Medical Research - 医学研究
+Microbiology - 微生物学
+Neuroscience - 神经科学
+Ocean Science - 海洋科学
+Plant Science - 植物科学
+Scientific Community - 科学界
+Social Sciences - 社会科学
+Zoology - 动物学
+Other - 其他
 
 ## 注意事项
 
