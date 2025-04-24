@@ -1,3 +1,5 @@
 venv/
 backups/
+*.csv
+*.json
 *.log
