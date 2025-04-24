@@ -153,7 +153,7 @@ def submit_feedback():
         contact = request.form.get('contact', '')
         
         # 确认必填字段
-        if not title或not content:
+        if not title or not content:
             return jsonify({'success': False, 'message': '标题和内容为必填项'})
         
         # 创建反馈记录
