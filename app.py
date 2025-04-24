@@ -49,20 +49,17 @@ def update_data():
     使用新的数据管道更新数据
     """
     try:
-        # 获取数据管道脚本的路径
-        pipeline_script = os.path.join("get_data", "data_pipeline.py")
+        # 获取项目根目录路径
+        project_root = os.path.dirname(os.path.abspath(__file__))
         
-        if not os.path.exists(pipeline_script):
-            logger.error(f"数据管道脚本不存在: {pipeline_script}")
-            return False
-            
-        # 执行数据更新流程 (Run in the get_data directory)
+        # 使用 python -m 方式调用模块以解决相对导入问题
         logger.info("启动数据更新流程...")
-        script_dir = os.path.dirname(pipeline_script)
-        script_name = os.path.basename(pipeline_script)
-        result = subprocess.run([sys.executable, script_name, "--full-update"], 
-                               cwd=script_dir, # Set working directory to 'get_data'
-                               capture_output=True, text=True)
+        result = subprocess.run(
+            [sys.executable, "-m", "get_data.data_pipeline", "--full-update"],
+            cwd=project_root, # 确保在项目根目录执行
+            capture_output=True, 
+            text=True
+        )
         
         if result.returncode != 0:
             logger.error(f"数据更新失败: {result.stderr}")
@@ -156,7 +153,7 @@ def submit_feedback():
         contact = request.form.get('contact', '')
         
         # 确认必填字段
-        if not title or not content:
+        if not title或not content:
             return jsonify({'success': False, 'message': '标题和内容为必填项'})
         
         # 创建反馈记录
