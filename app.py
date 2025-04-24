@@ -44,18 +44,29 @@ def load_cached_data():
         logger.error(f"加载缓存数据时出错: {e}")
         return False
 
-def update_data():
+def update_data(full_update=False):
     """
     使用新的数据管道更新数据
+    Args:
+        full_update (bool): 是否执行全量更新，默认为False(增量更新)
+    Returns:
+        tuple: (成功与否, 新增文章数)
     """
     try:
+        # 获取更新前的文章数量
+        old_count = len(articles_data)
+        
         # 获取项目根目录路径
         project_root = os.path.dirname(os.path.abspath(__file__))
         
         # 使用 python -m 方式调用模块以解决相对导入问题
         logger.info("启动数据更新流程...")
+        cmd = [sys.executable, "-m", "get_data.data_pipeline"]
+        if full_update:
+            cmd.append("--full-update")
+            
         result = subprocess.run(
-            [sys.executable, "-m", "get_data.data_pipeline", "--full-update"],
+            cmd,
             cwd=project_root, # 确保在项目根目录执行
             capture_output=True, 
             text=True
@@ -63,13 +74,18 @@ def update_data():
         
         if result.returncode != 0:
             logger.error(f"数据更新失败: {result.stderr}")
-            return False
+            return False, 0
             
         # 重新加载更新后的数据
-        return load_cached_data()
+        success = load_cached_data()
+        
+        # 计算新增文章数
+        new_count = len(articles_data) - old_count if success and old_count > 0 else len(articles_data)
+        
+        return success, new_count
     except Exception as e:
         logger.error(f"更新数据时出错: {e}")
-        return False
+        return False, 0
 
 @app.route('/')
 def index():
@@ -87,13 +103,13 @@ def refresh_data():
     """
     刷新数据的API端点
     """
-    success = update_data()
+    success, new_count = update_data()
     
     if success:
         return jsonify({
             'status': 'success',
-            'message': f'成功更新 {len(articles_data)} 篇论文',
-            'count': len(articles_data)
+            'message': f'成功更新 {new_count} 篇论文',
+            'count': new_count  # 这里改为new_count，不再使用总数
         })
     else:
         return jsonify({
