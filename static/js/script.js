@@ -229,6 +229,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return new Date(b) - new Date(a);
         });
         
+        // 在每个日期组内，按更新时间排序
+        for (const dateStr in articlesByDate) {
+            articlesByDate[dateStr].sort((a, b) => {
+                // 使用 updatedAt 字段作为更新时间，如果不存在则回退到其他时间字段
+                const updateTimeA = a.updatedAt ? new Date(a.updatedAt) : 
+                                  (a.updated ? new Date(a.updated) : new Date(a.normalizedDate));
+                const updateTimeB = b.updatedAt ? new Date(b.updatedAt) : 
+                                  (b.updated ? new Date(b.updated) : new Date(b.normalizedDate));
+                
+                // 降序排列，更新时间晚的排在前面
+                return updateTimeB - updateTimeA;
+            });
+        }
+        
         // 生成文章卡片，按日期分组
         sortedDates.forEach(dateStr => {
             // 添加日期分隔标题
