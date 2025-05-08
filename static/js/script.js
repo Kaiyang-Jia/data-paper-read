@@ -319,25 +319,62 @@ document.addEventListener('DOMContentLoaded', function() {
         // 如果只有一页，不显示分页
         if (totalPages <= 1) return;
         
-        // 生成页码 (逻辑不变)
-        for (let i = 1; i <= totalPages; i++) {
+        // 优化分页显示，只显示部分页码
+        const maxVisiblePages = 5; // 最多显示的页码数量
+        
+        // 添加页码创建函数
+        const createPageItem = (pageNum, isActive = false, text = pageNum) => {
             const pageItem = document.createElement('div');
-            pageItem.className = `page-item ${i === currentPage ? 'active' : ''}`;
-            pageItem.textContent = i;
+            pageItem.className = `page-item ${isActive ? 'active' : ''}`;
+            pageItem.textContent = text;
             
-            pageItem.addEventListener('click', () => {
-                currentPage = i;
-                renderArticles(currentPage); // 重新渲染当前页
-                
-                // 更新活动页样式 (逻辑不变)
-                const pageItems = pagination.querySelectorAll('.page-item');
-                pageItems.forEach(item => {
-                    item.classList.remove('active');
+            if (pageNum > 0 && pageNum <= totalPages) {
+                pageItem.addEventListener('click', () => {
+                    currentPage = pageNum;
+                    renderArticles(currentPage);
+                    generatePagination();
                 });
-                pageItem.classList.add('active');
-            });
+            } else {
+                pageItem.classList.add('disabled');
+            }
             
-            pagination.appendChild(pageItem);
+            return pageItem;
+        };
+        
+        // 添加首页按钮
+        if (totalPages > maxVisiblePages) {
+            pagination.appendChild(createPageItem(1, currentPage === 1));
+        }
+        
+        // 计算要显示的页码范围
+        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+        
+        // 调整起始页，确保显示完整的页码数
+        if (endPage - startPage + 1 < maxVisiblePages) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+        }
+        
+        // 如果首页和起始页之间有间隔，添加省略号
+        if (startPage > 2) {
+            pagination.appendChild(createPageItem(0, false, '...'));
+        }
+        
+        // 添加中间的页码
+        for (let i = startPage; i <= endPage; i++) {
+            if (i !== 1 && i !== totalPages) { // 避免重复添加首页和尾页
+                pagination.appendChild(createPageItem(i, i === currentPage));
+            }
+        }
+        
+        // 如果尾页和结束页之间有间隔，添加省略号
+        if (endPage < totalPages - 1) {
+            pagination.appendChild(createPageItem(0, false, '...'));
+        }
+        
+        // 添加尾页按钮
+        if (totalPages > maxVisiblePages) {
+            pagination.appendChild(createPageItem(totalPages, currentPage === totalPages));
         }
     }
 

@@ -9,8 +9,9 @@ NLP处理模块
 3. 基于内容生成相关标签
 4. 按主题分类数据论文
 
-输入：raw_papers.csv（原始爬取数据，包含多个期刊）
-输出：processed_papers.csv（处理后的完整数据）
+输入：从数据库表 raw_papers 读取原始爬取数据（包含多个期刊）
+输出：处理后的完整数据保存到数据库表 processed_papers
+保留CSV导出功能作为备份
 """
 
 import csv
@@ -22,6 +23,16 @@ import time
 import random
 import shutil
 from datetime import datetime
+
+# 导入数据库工具类
+try:
+    from .db_helper import DBHelper  # 当作为包导入时
+except ImportError:
+    try:
+        from db_helper import DBHelper  # 当在同一目录下直接运行时
+    except ImportError:
+        print("错误：无法导入数据库工具类，请确保 db_helper.py 文件存在")
+        DBHelper = None
 
 # 配置日志
 logging.basicConfig(
@@ -59,23 +70,18 @@ PREDEFINED_SUBJECTS = [
 class NLPProcessor:
     """科研论文NLP处理类"""
     
-    # --- 修改开始: 移除硬编码的文件名，允许外部设置 ---
-    # def __init__(self):
-    #     """初始化NLP处理器"""
-    #     self.input_csv = "raw_papers.csv"
-    #     self.output_csv = "processed_papers.csv"
-    #     self.api_client = self._init_deepseek_client()
-    #     self.subjects = PREDEFINED_SUBJECTS
-    #     self.backup_folder = "backups" # 备份文件夹
-
     def __init__(self, input_csv="raw_papers.csv", output_csv="processed_papers.csv", backup_folder="backups"):
         """初始化NLP处理器，允许指定文件路径"""
+        # 保留 CSV 文件路径作为备份
         self.input_csv = input_csv
         self.output_csv = output_csv
         self.api_client = self._init_deepseek_client()
         self.subjects = PREDEFINED_SUBJECTS
         self.backup_folder = backup_folder # 备份文件夹
-    # --- 修改结束 ---
+        
+        # 确保数据库表已初始化
+        if DBHelper:
+            DBHelper.initialize_tables()
 
     def _init_deepseek_client(self):
         """初始化DeepSeek API客户端"""
@@ -167,248 +173,217 @@ class NLPProcessor:
             
         # 备份输入文件（如果存在）
         if os.path.exists(self.input_csv):
-            # --- 修改开始: 使用 self.backup_folder ---
             input_backup = os.path.join(self.backup_folder, f"raw_papers_{timestamp}.csv")
-            # --- 修改结束 ---
             shutil.copy2(self.input_csv, input_backup)
             logger.info(f"已创建输入文件备份: {input_backup}")
             
         # 备份输出文件（如果存在）
         if os.path.exists(self.output_csv):
-            # --- 修改开始: 使用 self.backup_folder ---
             output_backup = os.path.join(self.backup_folder, f"processed_papers_{timestamp}.csv")
-            # --- 修改结束 ---
             shutil.copy2(self.output_csv, output_backup)
             logger.info(f"已创建输出文件备份: {output_backup}")
     
     def process_papers(self):
-        """处理论文数据，包括处理新论文和补全旧论文的缺失信息"""
-        # 创建备份
+        """处理论文数据，包括处理新论文和补全旧论文的缺失信息，使用数据库作为数据源和目标"""
+        # 创建备份 (用于保留 CSV 备份)
         self.backup_files()
         
-        # 检查文件是否存在
-        if not os.path.exists(self.input_csv):
-            logger.error(f"输入文件不存在: {self.input_csv}")
-            return False
-            
-        # 读取输入CSV
-        input_datasets = []
-        input_doi_map = {}
-        try:
-            with open(self.input_csv, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    input_datasets.append(row)
-                    if "doi" in row and row["doi"]:
-                        input_doi_map[row["doi"]] = row # Store raw data by DOI
-            logger.info(f"成功读取 {len(input_datasets)} 条输入数据")
-        except Exception as e:
-            logger.error(f"读取输入文件失败: {e}")
+        # 确保数据库连接正常
+        if not DBHelper:
+            logger.error("数据库工具类未正确初始化，无法处理数据")
             return False
         
-        # 如果输入为空，退出处理
-        if not input_datasets:
-            logger.warning("没有找到需要处理的数据")
-            return False
+        # 1. 从数据库获取已处理的论文数据
+        processed_papers = DBHelper.get_all_processed_papers()
+        processed_doi_set = set()
+        for paper in processed_papers:
+            if paper.get('doi'):
+                processed_doi_set.add(paper.get('doi'))
+        logger.info(f"从数据库中获取到 {len(processed_papers)} 条已处理的论文数据")
         
-        # 读取现有输出CSV（避免重复处理）
-        existing_data = []
-        processed_doi = set()
-        if os.path.exists(self.output_csv):
-            try:
-                with open(self.output_csv, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        existing_data.append(row)
-                        if "doi" in row and row["doi"]:
-                            processed_doi.add(row["doi"])
-                logger.info(f"已有 {len(existing_data)} 条处理过的数据")
-            except Exception as e:
-                logger.error(f"读取现有输出文件失败: {e}")
-                # If reading fails, proceed as if no existing data
-                existing_data = []
-                processed_doi = set()
+        # 2. 获取未处理的原始论文数据（在 raw_papers 中但不在 processed_papers 中）
+        unprocessed_papers = DBHelper.get_unprocessed_raw_papers()
+        logger.info(f"发现 {len(unprocessed_papers)} 条未处理的论文数据")
         
-        # 准备最终输出的数据列表和头部
-        final_output_data = []
-        headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
-                   "url", "authors", "tags", "Subject", "journal", "abstract"]
-        
-        # 标记是否有数据被修改或添加
-        data_changed = False
-
-        # 1. 检查并更新现有数据
-        logger.info("开始检查并更新现有数据...")
-        for i, row in enumerate(tqdm(existing_data, desc="检查旧数据")):
-            doi = row.get("doi", "")
-            title = row.get("title", "")
-            abstract = row.get("abstract", "") # Get abstract from processed if available
-            # If abstract is missing in processed, try getting it from raw input map
-            if not abstract and doi in input_doi_map:
-                 abstract = input_doi_map[doi].get("abstract", "")
-                 row["abstract"] = abstract # Update row if abstract was missing
-                 if abstract:
-                     data_changed = True
-                     logger.info(f"为 DOI {doi} 从原始数据补充了摘要")
-
-            needs_update = False
-            
-            # 检查中文标题
-            if title and not row.get("titleCn"): 
-                logger.info(f"为 DOI {doi} 补全中文标题...")
-                title_cn = self.call_ai_api(title, "translate")
-                if title_cn:
-                    row["titleCn"] = title_cn
-                    needs_update = True
-                    time.sleep(1) # API call delay
-            
-            # 确定用于解读、分类和标签生成的文本 (优先摘要)
-            text_for_nlp = abstract if abstract else title
-
-            # 检查中文解读 (需要原文标题或摘要)
-            if text_for_nlp and not row.get("interpretationCn"):
-                logger.info(f"为 DOI {doi} 补全中文解读...")
-                interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
-                if interpretation_cn:
-                    row["interpretationCn"] = interpretation_cn
-                    needs_update = True
-                    time.sleep(1) # API call delay
-
-            # 检查标签 (需要原文标题或摘要)
-            if text_for_nlp and not row.get("tags"):
-                logger.info(f"为 DOI {doi} 补全标签...")
-                tags = self.call_ai_api(text_for_nlp, "generate_tags")
-                if tags:
-                    row["tags"] = tags
-                    needs_update = True
-                    time.sleep(1) # API call delay
-
-            # 检查 Subject 分类
-            if text_for_nlp and not row.get("Subject"):
-                logger.info(f"为 DOI {doi} 补全 Subject 分类...")
-                subject = self.call_ai_api(text_for_nlp, "classify")
-                if subject: # 确保API调用成功且返回了有效分类
-                    row["Subject"] = subject
-                    needs_update = True
-                    time.sleep(1) # API call delay
-
-            # 检查期刊字段，从原始数据更新或保持不变
-            if doi in input_doi_map and input_doi_map[doi].get("journal"):
-                if row.get("journal") != input_doi_map[doi].get("journal"):
-                    row["journal"] = input_doi_map[doi].get("journal")
-                    data_changed = True
-                    logger.info(f"为 DOI {doi} 更新期刊信息为 {row['journal']}")
-            elif not row.get("journal"):  # 如果没有期刊信息，设为空字符串而不是默认值
-                row["journal"] = ""
-                data_changed = True
-            
-            if needs_update:
-                data_changed = True
-                # 每处理5篇等待一下
-                if i > 0 and i % 5 == 0:
-                    logger.info("API调用间歇等待...")
-                    time.sleep(2)
-
-            final_output_data.append(row) # Add potentially updated row
-
-        # 2. 处理新数据 (存在于 raw 但不在 processed 中的)
-        logger.info("开始处理新数据...")
+        # 3. 处理未处理的论文数据
         new_papers_processed_count = 0
-        for data in tqdm(input_datasets, desc="处理新论文"):
-            doi = data.get("doi", "")
-            if not doi or doi in processed_doi:
-                continue # Skip if no DOI or already processed
+        if unprocessed_papers:
+            logger.info("开始处理新论文数据...")
+            for paper in tqdm(unprocessed_papers, desc="处理新论文"):
+                doi = paper.get('doi', '')
+                title = paper.get('title', '')
+                abstract = paper.get('abstract', '')
                 
-            # 获取基本信息
-            title = data.get("title", "")
-            abstract = data.get("abstract", "")
-            
-            # 初始化 processed_item，包含原始数据的期刊名称
-            processed_item = {
-                "title": title,
-                "publishDate": data.get("publishDate", ""),
-                "doi": doi,
-                "url": data.get("url", ""),
-                "authors": data.get("authors", ""),
-                "abstract": abstract,
-                "titleCn": "",
-                "interpretationCn": "",
-                "tags": data.get("tags", ""), # 使用原始 tags (如果有)
-                "Subject": "", # 初始化 Subject 字段
-                "journal": data.get("journal", "") # 使用原始期刊数据，不设默认值
-            }
-            
-            # 如果有内容，进行NLP处理
-            if title:
-                logger.info(f"处理新论文 DOI {doi}: {title[:30]}...")
-                # 翻译标题
-                title_cn = self.call_ai_api(title, "translate")
-                processed_item["titleCn"] = title_cn
-                time.sleep(1)
+                # 创建处理后的论文数据对象
+                processed_paper = {
+                    'title': title,
+                    'publishDate': paper.get('publishDate', ''),
+                    'doi': doi,
+                    'url': paper.get('url', ''),
+                    'authors': paper.get('authors', ''),
+                    'abstract': abstract,
+                    'journal': paper.get('journal', ''),
+                    'titleCn': '',
+                    'interpretationCn': '',
+                    'tags': paper.get('tags', ''),
+                    'Subject': ''
+                }
                 
-                # 为确保有内容可处理，使用摘要优先，无摘要则使用标题
-                text_for_nlp = abstract if abstract else title
-                
-                # 生成解读
-                interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
-                processed_item["interpretationCn"] = interpretation_cn
-                time.sleep(1)
-                
-                # 生成标签（如果原始数据没有标签）
-                if not processed_item["tags"]:
-                    tags = self.call_ai_api(text_for_nlp, "generate_tags")
-                    processed_item["tags"] = tags
+                # 如果有内容，进行NLP处理
+                if title:
+                    logger.info(f"处理新论文 DOI {doi}: {title[:30]}...")
+                    # 翻译标题
+                    title_cn = self.call_ai_api(title, "translate")
+                    processed_paper['titleCn'] = title_cn
                     time.sleep(1)
-
-                # 生成 Subject 分类
-                subject = self.call_ai_api(text_for_nlp, "classify")
-                processed_item["Subject"] = subject # 存储分类结果
-                time.sleep(1)
                     
-            final_output_data.append(processed_item)
-            data_changed = True
-            new_papers_processed_count += 1
-            processed_doi.add(doi) # Add to processed set immediately
-                
-            # 每处理5篇新文章等待一下
-            if new_papers_processed_count > 0 and new_papers_processed_count % 5 == 0:
-                logger.info("API调用间歇等待...")
-                time.sleep(2)
+                    # 为确保有内容可处理，使用摘要优先，无摘要则使用标题
+                    text_for_nlp = abstract if abstract else title
+                    
+                    # 生成解读
+                    interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
+                    processed_paper['interpretationCn'] = interpretation_cn
+                    time.sleep(1)
+                    
+                    # 生成标签（如果原始数据没有标签）
+                    if not processed_paper['tags']:
+                        tags = self.call_ai_api(text_for_nlp, "generate_tags")
+                        processed_paper['tags'] = tags
+                        time.sleep(1)
+
+                    # 生成 Subject 分类
+                    subject = self.call_ai_api(text_for_nlp, "classify")
+                    processed_paper['Subject'] = subject
+                    time.sleep(1)
+                    
+                    # 保存到数据库
+                    if DBHelper.insert_processed_paper(processed_paper):
+                        new_papers_processed_count += 1
+                    
+                    # 每处理5篇新文章等待一下
+                    if new_papers_processed_count > 0 and new_papers_processed_count % 5 == 0:
+                        logger.info("API调用间歇等待...")
+                        time.sleep(2)
         
-        # 检查是否有数据更改或添加
-        if not data_changed:
-            logger.info("没有数据被修改或添加，文件保持不变")
-            return True
-            
-        # 写入输出CSV (覆盖写入)
+        # 4. 检查并更新已处理数据中可能缺失的字段
+        updated_papers_count = 0
+        if processed_papers:
+            logger.info("开始检查并补全已处理论文数据中缺失的字段...")
+            for paper in tqdm(processed_papers, desc="检查已处理数据"):
+                doi = paper.get('doi', '')
+                title = paper.get('title', '')
+                abstract = paper.get('abstract', '')
+                
+                needs_update = False
+                
+                # 检查中文标题
+                if title and not paper.get('titleCn'): 
+                    logger.info(f"为 DOI {doi} 补全中文标题...")
+                    title_cn = self.call_ai_api(title, "translate")
+                    if title_cn:
+                        paper['titleCn'] = title_cn
+                        needs_update = True
+                        time.sleep(1)
+                
+                # 确定用于解读、分类和标签生成的文本 (优先摘要)
+                text_for_nlp = abstract if abstract else title
+
+                # 检查中文解读
+                if text_for_nlp and not paper.get('interpretationCn'):
+                    logger.info(f"为 DOI {doi} 补全中文解读...")
+                    interpretation_cn = self.call_ai_api(text_for_nlp, "interpret")
+                    if interpretation_cn:
+                        paper['interpretationCn'] = interpretation_cn
+                        needs_update = True
+                        time.sleep(1)
+
+                # 检查标签
+                if text_for_nlp and not paper.get('tags'):
+                    logger.info(f"为 DOI {doi} 补全标签...")
+                    tags = self.call_ai_api(text_for_nlp, "generate_tags")
+                    if tags:
+                        paper['tags'] = tags
+                        needs_update = True
+                        time.sleep(1)
+
+                # 检查 Subject 分类
+                if text_for_nlp and not paper.get('Subject'):
+                    logger.info(f"为 DOI {doi} 补全 Subject 分类...")
+                    subject = self.call_ai_api(text_for_nlp, "classify")
+                    if subject:
+                        paper['Subject'] = subject
+                        needs_update = True
+                        time.sleep(1)
+
+                # 如果需要更新，将更新后的数据保存回数据库
+                if needs_update:
+                    if DBHelper.insert_processed_paper(paper):  # 使用 insert_processed_paper 同时支持插入和更新
+                        updated_papers_count += 1
+                    
+                    # 每更新5篇等待一下
+                    if updated_papers_count > 0 and updated_papers_count % 5 == 0:
+                        logger.info("API调用间歇等待...")
+                        time.sleep(2)
+        
+        # 导出处理后的数据到 CSV 文件作为备份
+        self.export_processed_data_to_csv()
+        
+        logger.info(f"论文处理完成，新处理 {new_papers_processed_count} 篇，更新 {updated_papers_count} 篇")
+        return new_papers_processed_count > 0 or updated_papers_count > 0
+    
+    def export_processed_data_to_csv(self):
+        """将处理后的数据从数据库导出到CSV文件作为备份"""
+        if not DBHelper:
+            logger.error("数据库工具类未正确初始化，无法导出数据")
+            return False
+        
+        processed_papers = DBHelper.get_all_processed_papers()
+        if not processed_papers:
+            logger.warning("没有找到可导出的处理后论文数据")
+            return False
+        
         try:
+            # 定义CSV文件的字段列表
+            headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
+                       "url", "authors", "tags", "abstract", "Subject", "journal"]
+            
+            # 将数据写入CSV文件
             with open(self.output_csv, "w", encoding="utf-8", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writeheader()
                 
-                # 写入所有数据 (已更新的旧数据 + 新处理的数据)
-                for row in final_output_data:
-                    # 确保所有字段都有值，避免CSV格式错误
-                    output_row = {field: row.get(field, "") for field in headers}
-                    writer.writerow(output_row)
+                for paper in processed_papers:
+                    # 从论文对象中提取相关字段
+                    row = {field: paper.get(field, "") for field in headers}
                     
-            logger.info(f"数据已更新并保存到 {self.output_csv}，共 {len(final_output_data)} 条记录")
+                    # 处理特殊字段
+                    if "tags" in row and isinstance(row["tags"], list):
+                        row["tags"] = ",".join(row["tags"])
+                    
+                    writer.writerow(row)
+            
+            logger.info(f"成功将 {len(processed_papers)} 条处理后的论文数据导出到 {self.output_csv}")
             return True
         except Exception as e:
-            logger.error(f"保存输出文件失败: {e}")
+            logger.error(f"导出数据到CSV时发生错误: {e}")
             return False
 
 def main():
     """主函数"""
-    # --- 修改开始: 如果直接运行 process.py，需要提供正确的路径 ---
     # 获取脚本所在目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
     input_file = os.path.join(script_dir, "raw_papers.csv")
     output_file = os.path.join(script_dir, "processed_papers.csv")
     backup_dir = os.path.join(script_dir, "backups")
 
+    # 确保数据库表已初始化
+    if DBHelper:
+        DBHelper.initialize_tables()
+    else:
+        logger.error("无法初始化数据库，请确保数据库配置正确")
+        return
+
     processor = NLPProcessor(input_csv=input_file, output_csv=output_file, backup_folder=backup_dir)
-    # --- 修改结束 ---
     success = processor.process_papers()
     
     if success:

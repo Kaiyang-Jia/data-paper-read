@@ -10,6 +10,13 @@ import logging
 import datetime
 import csv
 
+# 导入数据库工具类
+try:
+    from get_data.db_helper import DBHelper
+except ImportError as e:
+    DBHelper = None
+    print(f"警告：无法导入数据库工具类，将回退到使用JSON文件: {e}")
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO, 
@@ -21,22 +28,43 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, template_folder='src/templates')
 
 # 全局变量存储数据
-CACHE_FILE = os.path.join('get_data', 'nature_data_articles.json') # Updated path
+CACHE_FILE = os.path.join('get_data', 'nature_data_articles.json') # 作为备份和回退方案
 articles_data = []
 
 # 反馈存储文件
 FEEDBACK_FILE = 'user_feedback.csv'
 
+def load_from_database():
+    """从数据库加载数据"""
+    global articles_data
+    try:
+        if DBHelper:
+            logger.info("正在从数据库加载数据...")
+            db_articles = DBHelper.get_all_processed_papers()
+            if db_articles and len(db_articles) > 0:
+                articles_data = db_articles
+                logger.info(f"成功从数据库加载了 {len(articles_data)} 篇论文数据")
+                return True
+            else:
+                logger.warning("数据库中没有找到论文数据")
+                return False
+        else:
+            logger.warning("数据库工具类未初始化，无法从数据库加载数据")
+            return False
+    except Exception as e:
+        logger.error(f"从数据库加载数据时出错: {e}")
+        return False
+
 def load_cached_data():
     """
-    从缓存文件中加载数据
+    从缓存文件中加载数据（作为备份或回退方案）
     """
     global articles_data
     try:
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, 'r', encoding='utf-8') as f:
                 articles_data = json.load(f)
-            logger.info(f"成功从缓存加载了 {len(articles_data)} 篇论文数据")
+            logger.info(f"成功从缓存文件加载了 {len(articles_data)} 篇论文数据")
             return len(articles_data) > 0
         logger.warning(f"缓存文件不存在: {CACHE_FILE}")
         return False
@@ -46,7 +74,7 @@ def load_cached_data():
 
 def update_data(full_update=False):
     """
-    使用新的数据管道更新数据
+    使用数据管道更新数据
     Args:
         full_update (bool): 是否执行全量更新，默认为False(增量更新)
     Returns:
@@ -76,8 +104,8 @@ def update_data(full_update=False):
             logger.error(f"数据更新失败: {result.stderr}")
             return False, 0
             
-        # 重新加载更新后的数据
-        success = load_cached_data()
+        # 优先从数据库重新加载数据，如果失败则尝试从缓存文件加载
+        success = load_from_database() or load_cached_data()
         
         # 计算新增文章数
         new_count = len(articles_data) - old_count if success and old_count > 0 else len(articles_data)
@@ -92,8 +120,8 @@ def index():
     """
     主页视图
     """
-    # 尝试加载缓存数据，如果没有则更新数据
-    if not load_cached_data():
+    # 尝试优先从数据库加载数据，如果失败则尝试从缓存文件加载，如果还是没有数据则更新数据
+    if not (load_from_database() or load_cached_data()):
         update_data()
     
     return render_template('index.html', articles=articles_data)
@@ -109,7 +137,7 @@ def refresh_data():
         return jsonify({
             'status': 'success',
             'message': f'成功更新 {new_count} 篇论文',
-            'count': new_count  # 这里改为new_count，不再使用总数
+            'count': new_count
         })
     else:
         return jsonify({
@@ -121,13 +149,53 @@ def refresh_data():
 def get_articles():
     """
     获取文章数据的API端点
+    支持关键词过滤和学科分类过滤
     """
     # 关键词过滤
     keyword = request.args.get('keyword', '').lower()
+    # 学科分类过滤
+    subject = request.args.get('subject', '')
     
+    # 如果DBHelper可用且有subject参数，直接从数据库按学科过滤
+    if DBHelper and subject and subject != '全部':
+        try:
+            filtered_articles = DBHelper.get_processed_papers_by_subject(subject)
+            # 如果还有关键词，再进行二次过滤
+            if keyword:
+                filtered_articles = [
+                    article for article in filtered_articles 
+                    if keyword in article.get('title', '').lower() or 
+                       keyword in article.get('abstract', '').lower() or
+                       keyword in article.get('titleCn', '').lower() or
+                       keyword in article.get('interpretationCn', '').lower() or
+                       any(keyword in tag.lower() for tag in article.get('tags', []) if isinstance(article.get('tags'), list)) or
+                       (isinstance(article.get('tags'), str) and keyword in article.get('tags', '').lower())
+                ]
+            return jsonify(filtered_articles)
+        except Exception as e:
+            logger.error(f"按学科筛选数据失败: {e}")
+            # 如果出错，继续使用内存中的数据作为回退
+    
+    # 如果DBHelper可用且只有keyword参数，直接从数据库搜索
+    elif DBHelper and keyword and not subject:
+        try:
+            filtered_articles = DBHelper.search_processed_papers(keyword)
+            return jsonify(filtered_articles)
+        except Exception as e:
+            logger.error(f"搜索数据失败: {e}")
+            # 如果出错，继续使用内存中的数据作为回退
+    
+    # 否则在内存中进行过滤（回退方案）
+    # 如果有学科过滤
+    if subject and subject != '全部':
+        filtered_articles = [article for article in articles_data if article.get('Subject') == subject]
+    else:
+        filtered_articles = articles_data
+        
+    # 如果有关键词过滤
     if keyword:
         filtered_articles = [
-            article for article in articles_data 
+            article for article in filtered_articles 
             if keyword in article.get('title', '').lower() or 
                keyword in article.get('abstract', '').lower() or
                keyword in article.get('titleCn', '').lower() or
@@ -135,9 +203,8 @@ def get_articles():
                any(keyword in tag.lower() for tag in article.get('tags', []) if isinstance(article.get('tags'), list)) or
                (isinstance(article.get('tags'), str) and keyword in article.get('tags', '').lower())
         ]
-        return jsonify(filtered_articles)
-    else:
-        return jsonify(articles_data)
+    
+    return jsonify(filtered_articles)
 
 @app.route('/article/<int:index>')
 def get_article(index):
@@ -148,6 +215,28 @@ def get_article(index):
         return jsonify(articles_data[index])
     except IndexError:
         return jsonify({'error': '文章不存在'}), 404
+
+@app.route('/article/doi/<path:doi>')
+def get_article_by_doi(doi):
+    """
+    通过DOI获取特定文章数据的API端点
+    """
+    try:
+        if DBHelper:
+            # 从数据库获取文章
+            article = DBHelper.get_processed_paper_by_doi(doi)
+            if article:
+                return jsonify(article)
+        
+        # 如果数据库查询失败或没有结果，从内存中查找
+        for article in articles_data:
+            if article.get('doi') == doi:
+                return jsonify(article)
+                
+        return jsonify({'error': '文章不存在'}), 404
+    except Exception as e:
+        logger.error(f"通过DOI获取文章时出错: {e}")
+        return jsonify({'error': f'获取文章时出错: {str(e)}'}), 500
 
 @app.route('/feedback')
 def feedback():
@@ -205,9 +294,13 @@ def submit_feedback():
         return jsonify({'success': False, 'message': f'服务器错误: {str(e)}'}), 500
 
 if __name__ == '__main__':
+    # 确保数据库表已初始化
+    if DBHelper:
+        DBHelper.initialize_tables()
+    
     # 确保启动时有数据
-    if not load_cached_data():
-        logger.info("没有找到缓存数据，正在更新数据...")
+    if not (load_from_database() or load_cached_data()):
+        logger.info("没有找到数据，正在更新数据...")
         update_data()
     
     logger.info(f"服务器启动在 http://127.0.0.1:5000")

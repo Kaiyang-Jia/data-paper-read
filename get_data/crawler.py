@@ -4,7 +4,7 @@
 Nature和ESSD RSS爬虫模块
 
 自动爬取Nature Scientific Data和ESSD期刊的RSS源，获取最新发布的数据论文信息。
-输出原始数据到raw_papers.csv中，供后续处理。
+输出原始数据到MySQL数据库，同时保留CSV导出功能作为备份。
 """
 
 import feedparser
@@ -19,6 +19,16 @@ import re        # 保留，可能其他地方仍需使用
 import time      # 保留，可能其他地方仍需使用
 import random    # 保留，可能其他地方仍需使用
 from .abstract_fetcher import AbstractFetcher # 导入 AbstractFetcher
+
+# 导入数据库工具类
+try:
+    from .db_helper import DBHelper  # 当作为包导入时
+except ImportError:
+    try:
+        from db_helper import DBHelper  # 当在同一目录下直接运行时
+    except ImportError:
+        print("错误：无法导入数据库工具类，请确保 db_helper.py 文件存在")
+        DBHelper = None
 
 # 配置日志
 logging.basicConfig(
@@ -50,10 +60,12 @@ class RSSCrawler:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         self.abstract_fetcher = AbstractFetcher() # 初始化 AbstractFetcher
+        
+        # 初始化数据库表
+        if DBHelper:
+            DBHelper.initialize_tables()
 
-    # --- 移除从 abstract_fetcher.py 移植的方法 ---
-
-    # --- 现有方法修改 --- 
+    # --- 继续使用现有方法 --- 
     def clean_abstract(self, raw_abstract, title, journal_name):
         """清理HTML和冗余标题"""
         # 移除HTML标签
@@ -81,7 +93,6 @@ class RSSCrawler:
                 
         return " ".join(final_lines).strip()
     
-    # --- 修改开始: 重新实现 format_date 方法，根据期刊处理日期 ---
     def format_date(self, pub_date_str, journal_name):
         """根据期刊名称解析日期字符串并格式化为 YYYY-MM-DD"""
         if not pub_date_str:
@@ -149,11 +160,15 @@ class RSSCrawler:
         except Exception as e:
             logger.error(f"日期格式化时发生意外错误: {e}，日期字符串: '{pub_date_str}'，使用当前日期")
             return datetime.now().strftime("%Y-%m-%d")
-    # --- 修改结束 ---
 
     def crawl(self):
         """执行RSS爬取"""
         all_data = []
+        db_saved_count = 0  # 数据库保存计数
+        
+        # 确保数据库表已初始化
+        if DBHelper:
+            DBHelper.initialize_tables()
         
         for journal_info in self.journals:
             journal_name = journal_info["name"]
@@ -180,7 +195,7 @@ class RSSCrawler:
                     
                     abstract = self.clean_abstract(raw_abstract, title, current_journal_name)
                     
-                    # --- 修改开始: 根据期刊获取原始日期字符串，然后调用 format_date ---
+                    # --- 获取日期 ---
                     pub_date_str = ""
                     if journal_name == "Scientific Data":
                         # 优先 updated (可能对应 <dc:date> 或 <published>)
@@ -214,7 +229,6 @@ class RSSCrawler:
 
                     # 调用 format_date 方法 (确保它能处理 YYYY-MM-DD)
                     formatted_date = self.format_date(pub_date_str, journal_name)
-                    # --- 修改结束 ---
 
                     # 兼容DOI字段
                     doi = entry.get("dc_identifier", "").replace("doi:", "") if "dc_identifier" in entry else entry.get("guid", "")
@@ -252,7 +266,6 @@ class RSSCrawler:
                         if url:
                             logger.info(f"开始从网页获取摘要: {url}")
                             # 使用 AbstractFetcher 获取摘要
-                            # fetch_abstract 返回一个字典 {'abstract': ..., 'journal': ..., 'url': ...}
                             web_abstract_data = self.abstract_fetcher.fetch_abstract(url, journal_name=current_journal_name)
                             if web_abstract_data and web_abstract_data.get('abstract'): # 检查字典和 'abstract' 键
                                 fetched_web_abstract = web_abstract_data['abstract']
@@ -272,31 +285,51 @@ class RSSCrawler:
                     # 格式化日期
                     formatted_date = self.format_date(pub_date_str, journal_name)
                     
-                    # 添加期刊名称
-                    data_list.append([
-                        current_journal_name, title, abstract, formatted_date, doi, url, authors, ",".join(tags)
-                    ])
+                    # 创建论文数据字典
+                    paper_data = {
+                        "journal": current_journal_name,
+                        "title": title,
+                        "abstract": abstract,
+                        "publishDate": formatted_date,
+                        "doi": doi,
+                        "url": url,
+                        "authors": authors,
+                        "tags": ",".join(tags)
+                    }
+                    
+                    # 保存到数据库
+                    if DBHelper:
+                        if doi:  # 确保有DOI
+                            if DBHelper.insert_raw_paper(paper_data):
+                                data_list.append([
+                                    current_journal_name, title, abstract, formatted_date, doi, url, authors, ",".join(tags)
+                                ])
+                                db_saved_count += 1
+                    else:
+                        # 当数据库不可用时，直接添加到数据列表
+                        data_list.append([
+                            current_journal_name, title, abstract, formatted_date, doi, url, authors, ",".join(tags)
+                        ])
                 
                 all_data.extend(data_list)
                 logger.info(f"{journal_name} 爬取完成，共获取 {len(data_list)} 条数据")
             except Exception as e:
                 logger.error(f"{journal_name} 爬取过程中发生错误: {e}")
         
-        # 保存所有数据
+        # 保存所有数据到CSV作为备份
         if all_data:
             self.save_to_csv(all_data)
-        logger.info(f"所有期刊爬取完成，共获取 {len(all_data)} 条数据")
+        
+        logger.info(f"所有期刊爬取完成，共获取 {len(all_data)} 条数据，其中 {db_saved_count} 条保存到数据库")
         return all_data
     
     def save_to_csv(self, data_list):
-        """保存数据到CSV文件，避免重复条目"""
+        """保存数据到CSV文件作为备份，避免重复条目"""
         headers = ["journal", "title", "abstract", "publishDate", "doi", "url", "authors", "tags"]
-        # --- 修改开始: 定义输出文件路径在 get_data 目录下 ---
         # 获取当前脚本 (crawler.py) 所在的目录
         script_dir = os.path.dirname(os.path.abspath(__file__))
         # 定义输出文件路径在当前脚本所在目录下 (即 get_data)
         output_file = os.path.join(script_dir, "raw_papers.csv")
-        # --- 修改结束 ---
 
         # 读取现有数据
         existing_data = []
@@ -329,12 +362,17 @@ class RSSCrawler:
                 writer = csv.DictWriter(f, fieldnames=headers)
                 writer.writerows(new_rows)
         
-        logger.info(f"数据保存到 {output_file}，{len(new_rows)} 条新记录, 共 {len(existing_data) + len(new_rows)} 条记录")
+        logger.info(f"数据同时保存到CSV文件 {output_file}，{len(new_rows)} 条新记录, 共 {len(existing_data) + len(new_rows)} 条记录")
         self.last_added_count = len(new_rows)  # 更新新添加记录数
         return len(new_rows)
 
 def main():
     """主函数"""
+    # 初始化数据库表
+    if DBHelper:
+        DBHelper.initialize_tables()
+    
+    # 爬取数据
     crawler = RSSCrawler()
     articles = crawler.crawl()
     print(f"已爬取 {len(articles)} 篇数据期刊论文")
