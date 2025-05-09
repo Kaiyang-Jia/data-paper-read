@@ -25,6 +25,12 @@
     <!-- 筛选标签 -->
     <section class="filter-bar">
         <div class="container">
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="搜索论文标题、作者、标签...">
+                    <button id="searchButton" class="search-btn"><i class="search-icon">🔍</i></button>
+                </div>
+            </div>
             <!-- Removed h2 title -->
             <div id="subjectFilter" class="filter-tags"> 
                 <div class="tag-pill active" data-tag="全部">全部</div>
@@ -37,6 +43,9 @@
     <section class="nature-section">
         <div class="container">
             <h2 class="section-title">最新出版的科研数据论文</h2>
+            
+            <!-- 状态消息区域 -->
+            <div id="statusMessage" class="alert" style="display: none;"></div>
             
             <div class="paper-grid" id="articlesList">
                 <!-- 论文卡片将由 JavaScript 动态生成 -->

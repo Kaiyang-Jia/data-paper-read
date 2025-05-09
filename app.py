@@ -84,11 +84,16 @@ def update_data(full_update=False):
         # 获取更新前的文章数量
         old_count = len(articles_data)
         
+        # 获取当前时间，用于计算更新耗时
+        start_time = datetime.datetime.now()
+        
         # 获取项目根目录路径
         project_root = os.path.dirname(os.path.abspath(__file__))
         
         # 使用 python -m 方式调用模块以解决相对导入问题
-        logger.info("启动数据更新流程...")
+        update_type = "全量更新" if full_update else "增量更新"
+        logger.info(f"启动数据更新流程... 更新类型: {update_type}, 更新时间: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         cmd = [sys.executable, "-m", "get_data.data_pipeline"]
         if full_update:
             cmd.append("--full-update")
@@ -96,20 +101,33 @@ def update_data(full_update=False):
         result = subprocess.run(
             cmd,
             cwd=project_root, # 确保在项目根目录执行
-            capture_output=True, 
-            text=True
+            capture_output=True,
+            text=True,
+            encoding="utf-8",  # 强制用utf-8解码
+            errors="replace"   # 非法字符用?替换，防止崩溃
         )
         
         if result.returncode != 0:
             logger.error(f"数据更新失败: {result.stderr}")
             return False, 0
             
+        # 提取来自命令行输出的信息
+        output_lines = result.stdout.split('\n') if result.stdout else []
+        for line in output_lines:
+            if "成功" in line and "条记录" in line:
+                logger.info(f"数据管道输出: {line.strip()}")
+        
         # 优先从数据库重新加载数据，如果失败则尝试从缓存文件加载
         success = load_from_database() or load_cached_data()
         
         # 计算新增文章数
         new_count = len(articles_data) - old_count if success and old_count > 0 else len(articles_data)
         
+        # 计算更新耗时
+        end_time = datetime.datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        
+        logger.info(f"数据更新完成! 更新类型: {update_type}, 新增文章数: {new_count}, 总文章数: {len(articles_data)}, 耗时: {duration:.2f}秒")
         return success, new_count
     except Exception as e:
         logger.error(f"更新数据时出错: {e}")
@@ -131,18 +149,30 @@ def refresh_data():
     """
     刷新数据的API端点
     """
-    success, new_count = update_data()
+    request_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"收到数据刷新请求 - 时间: {request_time}")
+    
+    # 确定是否为全量更新
+    full_update = request.args.get('full', 'false').lower() == 'true'
+    update_type = "全量更新" if full_update else "增量更新"
+    logger.info(f"即将执行{update_type}...")
+    
+    success, new_count = update_data(full_update)
     
     if success:
+        result_message = f'成功更新 {new_count} 篇论文'
+        logger.info(f"数据刷新成功: {result_message}")
         return jsonify({
             'status': 'success',
-            'message': f'成功更新 {new_count} 篇论文',
+            'message': result_message,
             'count': new_count
         })
     else:
+        error_message = '数据更新失败，请查看服务器日志'
+        logger.error(f"数据刷新失败: {error_message}")
         return jsonify({
             'status': 'error',
-            'message': '数据更新失败，请查看服务器日志'
+            'message': error_message
         }), 500
 
 @app.route('/articles')

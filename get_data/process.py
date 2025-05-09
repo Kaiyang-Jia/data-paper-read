@@ -11,17 +11,14 @@ NLP处理模块
 
 输入：从数据库表 raw_papers 读取原始爬取数据（包含多个期刊）
 输出：处理后的完整数据保存到数据库表 processed_papers
-保留CSV导出功能作为备份
 """
 
-import csv
 import os
 import logging
 from openai import OpenAI
 from tqdm import tqdm
 import time
 import random
-import shutil
 from datetime import datetime
 
 # 导入数据库工具类
@@ -70,14 +67,10 @@ PREDEFINED_SUBJECTS = [
 class NLPProcessor:
     """科研论文NLP处理类"""
     
-    def __init__(self, input_csv="raw_papers.csv", output_csv="processed_papers.csv", backup_folder="backups"):
-        """初始化NLP处理器，允许指定文件路径"""
-        # 保留 CSV 文件路径作为备份
-        self.input_csv = input_csv
-        self.output_csv = output_csv
+    def __init__(self):
+        """初始化NLP处理器"""
         self.api_client = self._init_deepseek_client()
         self.subjects = PREDEFINED_SUBJECTS
-        self.backup_folder = backup_folder # 备份文件夹
         
         # 确保数据库表已初始化
         if DBHelper:
@@ -107,7 +100,7 @@ class NLPProcessor:
         prompt = ""
         system_content = "你是一位专业的科研文献翻译与解读助手" # 默认 System Prompt
         if task == "translate":
-            prompt = f"将以下英文论文标题翻译成简洁的学术中文，保持专业术语准确性，仅返回翻译结果，不要添加任何说明或注释：\n{text}"
+            prompt = f"将以下英文论文标题翻译成简洁的学术中文，保持专业术语准确性，仅返回翻译结果，不要添加任何说明或注释，不要添加书名号：\n{text}"
         elif task == "interpret":
             prompt = f"基于以下论文描述，提供一段70-90字的简洁学术性中文总结，聚焦数据集的制作过程和潜在应用价值，采用适合研究人员的正式语气，仅返回总结内容，不要添加任何说明或注释：\n{text}"
         elif task == "generate_tags":
@@ -162,36 +155,12 @@ class NLPProcessor:
                     logger.error("达到最大重试次数，放弃处理")
                     return ""
     
-    def backup_files(self):
-        """创建输入和输出文件的备份"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # 确保备份文件夹存在
-        if not os.path.exists(self.backup_folder):
-            os.makedirs(self.backup_folder)
-            logger.info(f"已创建备份文件夹: {self.backup_folder}")
-            
-        # 备份输入文件（如果存在）
-        if os.path.exists(self.input_csv):
-            input_backup = os.path.join(self.backup_folder, f"raw_papers_{timestamp}.csv")
-            shutil.copy2(self.input_csv, input_backup)
-            logger.info(f"已创建输入文件备份: {input_backup}")
-            
-        # 备份输出文件（如果存在）
-        if os.path.exists(self.output_csv):
-            output_backup = os.path.join(self.backup_folder, f"processed_papers_{timestamp}.csv")
-            shutil.copy2(self.output_csv, output_backup)
-            logger.info(f"已创建输出文件备份: {output_backup}")
-    
     def process_papers(self):
         """处理论文数据，包括处理新论文和补全旧论文的缺失信息，使用数据库作为数据源和目标"""
-        # 创建备份 (用于保留 CSV 备份)
-        self.backup_files()
-        
         # 确保数据库连接正常
         if not DBHelper:
             logger.error("数据库工具类未正确初始化，无法处理数据")
-            return False
+            return 0
         
         # 1. 从数据库获取已处理的论文数据
         processed_papers = DBHelper.get_all_processed_papers()
@@ -325,57 +294,12 @@ class NLPProcessor:
                         logger.info("API调用间歇等待...")
                         time.sleep(2)
         
-        # 导出处理后的数据到 CSV 文件作为备份
-        self.export_processed_data_to_csv()
-        
         logger.info(f"论文处理完成，新处理 {new_papers_processed_count} 篇，更新 {updated_papers_count} 篇")
-        return new_papers_processed_count > 0 or updated_papers_count > 0
-    
-    def export_processed_data_to_csv(self):
-        """将处理后的数据从数据库导出到CSV文件作为备份"""
-        if not DBHelper:
-            logger.error("数据库工具类未正确初始化，无法导出数据")
-            return False
-        
-        processed_papers = DBHelper.get_all_processed_papers()
-        if not processed_papers:
-            logger.warning("没有找到可导出的处理后论文数据")
-            return False
-        
-        try:
-            # 定义CSV文件的字段列表
-            headers = ["title", "titleCn", "interpretationCn", "publishDate", "doi",
-                       "url", "authors", "tags", "abstract", "Subject", "journal"]
-            
-            # 将数据写入CSV文件
-            with open(self.output_csv, "w", encoding="utf-8", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=headers)
-                writer.writeheader()
-                
-                for paper in processed_papers:
-                    # 从论文对象中提取相关字段
-                    row = {field: paper.get(field, "") for field in headers}
-                    
-                    # 处理特殊字段
-                    if "tags" in row and isinstance(row["tags"], list):
-                        row["tags"] = ",".join(row["tags"])
-                    
-                    writer.writerow(row)
-            
-            logger.info(f"成功将 {len(processed_papers)} 条处理后的论文数据导出到 {self.output_csv}")
-            return True
-        except Exception as e:
-            logger.error(f"导出数据到CSV时发生错误: {e}")
-            return False
+        return new_papers_processed_count + updated_papers_count
+
 
 def main():
     """主函数"""
-    # 获取脚本所在目录
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    input_file = os.path.join(script_dir, "raw_papers.csv")
-    output_file = os.path.join(script_dir, "processed_papers.csv")
-    backup_dir = os.path.join(script_dir, "backups")
-
     # 确保数据库表已初始化
     if DBHelper:
         DBHelper.initialize_tables()
@@ -383,13 +307,13 @@ def main():
         logger.error("无法初始化数据库，请确保数据库配置正确")
         return
 
-    processor = NLPProcessor(input_csv=input_file, output_csv=output_file, backup_folder=backup_dir)
-    success = processor.process_papers()
+    processor = NLPProcessor()
+    count = processor.process_papers()
     
-    if success:
-        print("论文数据处理完成！")
+    if count > 0:
+        print(f"论文数据处理完成！共处理 {count} 篇论文")
     else:
-        print("处理过程中出现错误，请查看日志")
+        print("没有新论文需要处理")
 
 if __name__ == "__main__":
     main()

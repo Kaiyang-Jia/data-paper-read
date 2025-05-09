@@ -46,13 +46,11 @@ class RSSCrawler:
         self.journals = [
             {
                 "name": "Scientific Data",
-                "rss_url": "https://www.nature.com/sdata.rss",
-                "output_file": "raw_papers.csv"
+                "rss_url": "https://www.nature.com/sdata.rss"
             },
             {
                 "name": "Earth System Science Data",
-                "rss_url": "https://essd.copernicus.org/articles/xml/rss2_0.xml",
-                "output_file": "raw_papers.csv"
+                "rss_url": "https://essd.copernicus.org/articles/xml/rss2_0.xml"
             }
         ]
         self.last_added_count = 0  # 新增属性，用于跟踪新添加的记录数
@@ -64,6 +62,28 @@ class RSSCrawler:
         # 初始化数据库表
         if DBHelper:
             DBHelper.initialize_tables()
+            
+    def get_existing_dois(self):
+        """获取数据库中已存在的所有DOI，用于去重"""
+        if DBHelper:
+            try:
+                connection = DBHelper.get_connection()
+                if not connection:
+                    logger.error("无法连接到数据库，获取现有DOI失败")
+                    return set()
+                    
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT doi FROM raw_papers WHERE doi IS NOT NULL AND doi != ''")
+                    existing_dois = {row[0] for row in cursor.fetchall()}
+                    logger.info(f"从数据库获取到 {len(existing_dois)} 个现有DOI")
+                    return existing_dois
+            except Exception as e:
+                logger.error(f"获取现有DOI时发生错误: {e}")
+                return set()
+            finally:
+                if connection:
+                    connection.close()
+        return set()
 
     # --- 继续使用现有方法 --- 
     def clean_abstract(self, raw_abstract, title, journal_name):
@@ -165,10 +185,13 @@ class RSSCrawler:
         """执行RSS爬取"""
         all_data = []
         db_saved_count = 0  # 数据库保存计数
+        skipped_count = 0   # 新增跳过计数
         
         # 确保数据库表已初始化
         if DBHelper:
             DBHelper.initialize_tables()
+        
+        existing_dois = self.get_existing_dois()  # 获取现有DOI
         
         for journal_info in self.journals:
             journal_name = journal_info["name"]
@@ -176,10 +199,37 @@ class RSSCrawler:
             logger.info(f"开始爬取 {journal_name} RSS: {rss_url}")
             try:
                 feed = feedparser.parse(rss_url)
-                data_list = []
+                
+                # 每个期刊的统计计数
+                journal_skipped = 0
+                journal_saved = 0
                 
                 logger.info(f"{journal_name} RSS包含 {len(feed.entries)} 条条目")
                 for i, entry in enumerate(feed.entries):
+                    # 先尝试获取DOI，提前检查是否重复
+                    doi = entry.get("dc_identifier", "").replace("doi:", "") if "dc_identifier" in entry else entry.get("guid", "")
+                    url = entry.get("link", "")
+                    if not doi and url and "doi.org" in url:
+                        try:
+                            doi = url.split("doi.org/")[1]
+                        except IndexError:
+                            pass
+                    elif not doi and url and "nature.com/articles/" in url:
+                        try:
+                            doi = url.split("articles/")[1]
+                        except IndexError:
+                            pass
+                    
+                    # 提前检查DOI是否存在，如果存在则跳过该条目
+                    if not doi:
+                        logger.warning(f"条目没有DOI标识: {entry.get('title', 'Unknown')}")
+                    elif doi in existing_dois:
+                        logger.info(f"跳过已存在的DOI: {doi}, 标题: {entry.get('title', 'Unknown')}")
+                        skipped_count += 1
+                        journal_skipped += 1
+                        continue
+                    
+                    # 只处理新条目
                     title = entry.get("title", "Unknown")
                     
                     # 兼容不同RSS的描述字段
@@ -229,22 +279,7 @@ class RSSCrawler:
 
                     # 调用 format_date 方法 (确保它能处理 YYYY-MM-DD)
                     formatted_date = self.format_date(pub_date_str, journal_name)
-
-                    # 兼容DOI字段
-                    doi = entry.get("dc_identifier", "").replace("doi:", "") if "dc_identifier" in entry else entry.get("guid", "")
-                    # 尝试从URL提取DOI
-                    url = entry.get("link", "")
-                    if not doi and url and "doi.org" in url:
-                        try:
-                            doi = url.split("doi.org/")[1]
-                        except IndexError:
-                            pass
-                    elif not doi and url and "nature.com/articles/" in url:
-                        try:
-                            doi = url.split("articles/")[1]
-                        except IndexError:
-                            pass
-                            
+                                
                     authors = entry.get("author", "Unknown")
                     # 兼容标签字段
                     tags = entry.get("category", "").split(",") if "category" in entry else []
@@ -301,70 +336,18 @@ class RSSCrawler:
                     if DBHelper:
                         if doi:  # 确保有DOI
                             if DBHelper.insert_raw_paper(paper_data):
-                                data_list.append([
-                                    current_journal_name, title, abstract, formatted_date, doi, url, authors, ",".join(tags)
-                                ])
                                 db_saved_count += 1
-                    else:
-                        # 当数据库不可用时，直接添加到数据列表
-                        data_list.append([
-                            current_journal_name, title, abstract, formatted_date, doi, url, authors, ",".join(tags)
-                        ])
+                                journal_saved += 1
                 
-                all_data.extend(data_list)
-                logger.info(f"{journal_name} 爬取完成，共获取 {len(data_list)} 条数据")
+                # 期刊处理完成后输出统计
+                logger.info(f"{journal_name} 爬取完成，共处理 {len(feed.entries)} 条目，跳过 {journal_skipped} 条已存在条目，插入 {journal_saved} 条新数据")
+                    
             except Exception as e:
                 logger.error(f"{journal_name} 爬取过程中发生错误: {e}")
         
-        # 保存所有数据到CSV作为备份
-        if all_data:
-            self.save_to_csv(all_data)
-        
-        logger.info(f"所有期刊爬取完成，共获取 {len(all_data)} 条数据，其中 {db_saved_count} 条保存到数据库")
-        return all_data
-    
-    def save_to_csv(self, data_list):
-        """保存数据到CSV文件作为备份，避免重复条目"""
-        headers = ["journal", "title", "abstract", "publishDate", "doi", "url", "authors", "tags"]
-        # 获取当前脚本 (crawler.py) 所在的目录
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        # 定义输出文件路径在当前脚本所在目录下 (即 get_data)
-        output_file = os.path.join(script_dir, "raw_papers.csv")
-
-        # 读取现有数据
-        existing_data = []
-        existing_doi = set()
-        
-        if os.path.exists(output_file):
-            logger.info(f"发现现有数据文件: {output_file}")
-            with open(output_file, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    existing_data.append(row)
-                    if row["doi"]:  # 确保doi不为空
-                        existing_doi.add(row["doi"])
-        
-        # 追加新数据（去重）
-        new_rows = []
-        for data in data_list:
-            if data[4] and data[4] not in existing_doi:  # data[4]是doi
-                new_rows.append(dict(zip(headers, data)))
-        
-        if len(existing_data) == 0:
-            # 如果没有现有数据，创建新文件
-            with open(output_file, "w", encoding="utf-8", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=headers)
-                writer.writeheader()
-                writer.writerows(new_rows)
-        else:
-            # 如果文件已存在且有数据，只追加新数据，不覆盖原有文件
-            with open(output_file, "a", encoding="utf-8", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=headers)
-                writer.writerows(new_rows)
-        
-        logger.info(f"数据同时保存到CSV文件 {output_file}，{len(new_rows)} 条新记录, 共 {len(existing_data) + len(new_rows)} 条记录")
-        self.last_added_count = len(new_rows)  # 更新新添加记录数
-        return len(new_rows)
+        logger.info(f"所有期刊爬取完成，共跳过 {skipped_count} 条已存在条目，执行 {db_saved_count} 次数据库插入")
+        self.last_added_count = db_saved_count  # 记录新增数量
+        return db_saved_count
 
 def main():
     """主函数"""
@@ -374,9 +357,9 @@ def main():
     
     # 爬取数据
     crawler = RSSCrawler()
-    articles = crawler.crawl()
-    print(f"已爬取 {len(articles)} 篇数据期刊论文")
-    return articles
+    db_operations_count = crawler.crawl()
+    print(f"数据爬取完成，共执行 {db_operations_count} 次数据库操作")
+    return db_operations_count
 
 if __name__ == "__main__":
     main()

@@ -13,11 +13,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const subjectFilterContainer = document.getElementById('subjectFilter'); // 假设 HTML 中容器 ID 改为 subjectFilter
     const pagination = document.getElementById('pagination');
     
+    // --- 搜索相关元素 ---
+    const searchInput = document.getElementById('searchInput');
+    const searchButton = document.getElementById('searchButton');
+    
     // 全局变量
     let allArticles = [];
     // --- 修改：当前筛选条件改为 Subject ---
     let currentSubject = '全部'; 
     let currentPage = 1;
+    let currentKeyword = ''; // 新增：当前搜索关键词
     const articlesPerPage = 10;  // 增加每页显示的文章数量，因为按日期分组后可能会导致每页实际文章数减少
 
     // 加载初始数据
@@ -39,11 +44,75 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // --- 搜索功能：添加事件监听器 ---
+    if (searchButton) {
+        searchButton.addEventListener('click', handleSearch);
+    }
+    
+    if (searchInput) {
+        // 按回车键触发搜索
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                handleSearch();
+            }
+        });
+        
+        // 输入框清空时，重置搜索
+        searchInput.addEventListener('input', function() {
+            if (this.value === '' && currentKeyword !== '') {
+                currentKeyword = '';
+                loadArticlesData();
+            }
+        });
+    }
+    
+    // 处理搜索
+    function handleSearch() {
+        const keyword = searchInput.value.trim();
+        if (keyword !== '') {
+            currentKeyword = keyword;
+            currentPage = 1; // 重置到第一页
+            currentSubject = '全部'; // 重置分类筛选
+            
+            // 更新分类筛选标签的活跃状态
+            if (subjectFilterContainer) {
+                const pills = subjectFilterContainer.querySelectorAll('.tag-pill');
+                pills.forEach(pill => {
+                    if (pill.dataset.subject === '全部' || pill.dataset.tag === '全部') {
+                        pill.classList.add('active');
+                    } else {
+                        pill.classList.remove('active');
+                    }
+                });
+            }
+            
+            // 加载搜索结果
+            loadArticlesData(true);
+        }
+    }
+    
     // 加载文章数据
-    function loadArticlesData() {
+    function loadArticlesData(isSearch = false) {
         showLoading(true);
         
-        fetch('/articles')
+        // 构建查询参数
+        let url = '/articles';
+        const params = new URLSearchParams();
+        
+        if (currentSubject && currentSubject !== '全部') {
+            params.append('subject', currentSubject);
+        }
+        
+        if (isSearch && currentKeyword) {
+            params.append('keyword', currentKeyword);
+        }
+        
+        // 如果有参数，添加到URL
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
+        
+        fetch(url)
             .then(response => response.json())
             .then(data => {
                 showLoading(false);
@@ -69,13 +138,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 
                 // --- 修改：生成 Subject 筛选器 ---
-                generateSubjectFilters(allArticles);
+                if (!isSearch || !currentKeyword) {
+                    generateSubjectFilters(allArticles);
+                }
                 
                 // 渲染文章
                 renderArticles(currentPage);
                 
                 // 生成分页
                 generatePagination();
+                
+                // 显示搜索结果状态
+                if (isSearch && currentKeyword) {
+                    showMessage(`找到 ${allArticles.length} 条与 "${currentKeyword}" 相关的结果`, 'info');
+                }
             })
             .catch(error => {
                 console.error('获取数据失败:', error);

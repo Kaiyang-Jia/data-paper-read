@@ -7,8 +7,7 @@
 主要功能：
 1. 从多个期刊RSS源爬取最新科研数据论文
 2. 使用NLP处理翻译标题、生成解读及标签
-3. 准备并导出处理好的数据到主应用
-4. 维护数据库中的论文数据
+3. 直接将处理好的数据保存到数据库
 
 使用方法:
 python data_pipeline.py [--full-update]
@@ -19,9 +18,6 @@ import sys
 import argparse
 import logging
 from datetime import datetime
-import shutil
-import csv
-import json
 
 # 配置日志
 logging.basicConfig(
@@ -33,10 +29,6 @@ logger = logging.getLogger(__name__)
 
 # 定义文件路径相对于脚本位置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-RAW_PAPERS_CSV = os.path.join(SCRIPT_DIR, "raw_papers.csv")
-PROCESSED_PAPERS_CSV = os.path.join(SCRIPT_DIR, "processed_papers.csv")
-OUTPUT_JSON = os.path.join(SCRIPT_DIR, "nature_data_articles.json")
-BACKUP_FOLDER = os.path.join(SCRIPT_DIR, "backups")
 
 # 导入数据库工具类
 try:
@@ -62,65 +54,6 @@ except ImportError as e:
         sys.exit(1)
 
 
-def backup_files():
-    """备份现有数据文件"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_folder = BACKUP_FOLDER
-
-    # 确保备份文件夹存在
-    if not os.path.exists(backup_folder):
-        os.makedirs(backup_folder)
-
-    # 备份文件列表
-    files_to_backup = [
-        {"source": RAW_PAPERS_CSV, "target": os.path.join(backup_folder, f"raw_papers_{timestamp}.csv")},
-        {"source": PROCESSED_PAPERS_CSV, "target": os.path.join(backup_folder, f"processed_papers_{timestamp}.csv")},
-        {"source": OUTPUT_JSON, "target": os.path.join(backup_folder, f"nature_data_articles_{timestamp}.json")}
-    ]
-
-    # 执行备份
-    for file_info in files_to_backup:
-        source = file_info["source"]
-        target = file_info["target"]
-        if os.path.exists(source):
-            shutil.copy2(source, target)
-            logger.info(f"数据文件已备份: {target}")
-    
-    return True
-
-
-def convert_to_json():
-    """将处理后的数据库数据转换为JSON格式"""
-    json_file = OUTPUT_JSON
-    logger.info(f"步骤4: 转换数据库数据到JSON格式: -> {json_file}")
-    
-    try:
-        # 从数据库获取处理后的论文数据
-        if not DBHelper:
-            logger.error("数据库工具类未正确初始化，无法获取数据")
-            return 0
-            
-        articles = DBHelper.get_all_processed_papers()
-        if not articles:
-            logger.error("数据库中没有找到处理后的论文数据")
-            return 0
-        
-        # 处理数据，确保格式兼容
-        for paper in articles:
-            # tags字段已经在DBHelper.get_all_processed_papers()中处理过了
-            pass
-                
-        # 写入JSON
-        with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump(articles, f, ensure_ascii=False, indent=2)
-            
-        logger.info(f"成功转换 {len(articles)} 条记录到 {json_file}")
-        return len(articles)
-    except Exception as e:
-        logger.error(f"转换数据库数据到JSON失败: {e}")
-        return 0
-
-
 def run_pipeline(full_update=False):
     """运行数据处理流水线"""
     logger.info("开始执行数据处理流水线...")
@@ -128,54 +61,61 @@ def run_pipeline(full_update=False):
     # 检查数据库是否正常初始化
     if not DBHelper:
         logger.error("数据库工具类未正确初始化，流水线执行失败")
-        return False
+        return False, 0
     
     # 确保数据库表已初始化
     DBHelper.initialize_tables()
     
-    # 步骤1: 备份现有数据文件（作为额外备份）
-    logger.info("步骤1: 备份现有数据文件")
-    backup_files()
-    
-    # 步骤2: 爬取最新数据并保存到数据库
-    logger.info("步骤2: 爬取最新数据并保存到数据库")
+    # 步骤1: 爬取最新数据并保存到数据库
+    logger.info("步骤1: 爬取最新数据并保存到数据库")
     try:
         crawler = RSSCrawler()
         articles = crawler.crawl()
         
-        # 检查是否有新数据，如果没有且不是全量更新，则跳过后续步骤
-        if crawler.last_added_count == 0 and not full_update:
-            logger.info("没有发现新数据，跳过后续处理步骤")
-            # 但仍需要生成JSON文件供前端使用
-            convert_to_json()
-            return True
+        # 检查是否有新数据
+        has_new_articles = crawler.last_added_count > 0
+        
+        # 检查是否有未处理的原始论文
+        unprocessed_count = 0
+        try:
+            unprocessed_papers = DBHelper.get_unprocessed_raw_papers()
+            unprocessed_count = len(unprocessed_papers) if unprocessed_papers else 0
+            if unprocessed_count > 0:
+                logger.info(f"发现 {unprocessed_count} 条未处理的原始论文数据")
+        except Exception as e:
+            logger.error(f"检查未处理论文时出错: {e}")
+        
+        # 如果没有新数据且没有未处理的论文，并且不是全量更新，则跳过后续步骤
+        if not has_new_articles and unprocessed_count == 0 and not full_update:
+            logger.info("没有发现新数据或未处理的论文，跳过后续处理步骤")
+            return True, 0
     except Exception as e:
         logger.error(f"爬取数据失败: {e}")
-        return False
+        return False, 0
         
-    # 步骤3: NLP处理数据并保存到数据库
-    logger.info("步骤3: 处理数据 (NLP处理)")
+    # 步骤2: NLP处理数据并保存到数据库
+    logger.info("步骤2: 处理数据 (NLP处理)")
     try:
-        # 创建处理器，指定备份文件路径
-        processor = NLPProcessor(
-            input_csv=RAW_PAPERS_CSV, 
-            output_csv=PROCESSED_PAPERS_CSV,
-            backup_folder=BACKUP_FOLDER
-        )
+        # 创建处理器，移除文件路径参数
+        processor = NLPProcessor()
         # 处理数据
-        processor.process_papers()
+        processed_count = processor.process_papers()
     except Exception as e:
         logger.error(f"处理数据失败: {e}")
-        return False
-        
-    # 步骤4: 从数据库导出数据到JSON
-    count = convert_to_json()
-    if count == 0:
-        logger.error("数据库到JSON转换失败或无数据")
-        return False
-        
-    logger.info(f"数据处理流水线执行完成! 共处理 {count} 条记录")
-    return True
+        return False, 0
+    
+    logger.info(f"数据处理流水线执行完成! 共处理 {processed_count} 条记录")
+    return True, processed_count
+
+
+def update_database(generate_json=False):
+    """更新数据库中的论文数据，返回更新的记录数量"""
+    try:
+        success, count = run_pipeline(full_update=False)
+        return count if success else 0
+    except Exception as e:
+        logger.error(f"数据库更新失败: {e}")
+        return 0
 
 
 if __name__ == "__main__":
@@ -185,10 +125,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # 运行流水线
-    success = run_pipeline(full_update=args.full_update)
+    success, count = run_pipeline(full_update=args.full_update)
     
     if not success:
         logger.error("流水线执行失败")
         sys.exit(1)
     else:
-        logger.info("数据流水线处理成功完成！")
+        logger.info(f"数据流水线处理成功完成！更新了 {count} 条记录")

@@ -368,7 +368,7 @@ class DBHelper:
                 cursor.execute("""
                     SELECT r.* 
                     FROM raw_papers r
-                    LEFT JOIN processed_papers p ON r.doi = p.doi
+                    LEFT JOIN processed_papers p ON r.doi = p.doi COLLATE utf8mb4_unicode_ci
                     WHERE p.doi IS NULL
                     ORDER BY r.publishDate DESC
                 """)
