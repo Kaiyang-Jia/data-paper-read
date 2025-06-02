@@ -3,3 +3,4 @@ backups/
 *.csv
 *.json
 *.log
+.env
