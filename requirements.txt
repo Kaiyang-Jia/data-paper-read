@@ -4,6 +4,7 @@ feedparser
 beautifulsoup4
 openai
 tqdm
+python-dotenv
 python-dateutil
 soupsieve
 requests
