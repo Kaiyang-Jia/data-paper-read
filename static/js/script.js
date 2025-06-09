@@ -353,8 +353,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 card.innerHTML = `
                     <div class="paper-header">
                         <div class="paper-content">
-                            <h3 class="paper-title">${article.title}</h3>
-                            <p class="paper-cn-title">【${article.titleCn || article.title}】</p>
+                            <h3 class="paper-title">【${article.titleCn || article.title}】</h3>
+                            <p class="paper-cn-title">${article.title}</p>
                             <div class="paper-meta">
                                 ${journalHTML}
                                 ${article.doi ? `<span class="meta-item doi-badge">DOI: ${article.doi}</span>` : ''}
@@ -372,8 +372,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
+                    </div>`;
                 
                 articlesContainer.appendChild(card);
             });
