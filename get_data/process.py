@@ -15,11 +15,15 @@ NLP处理模块
 
 import os
 import logging
+from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
 import time
 import random
 from datetime import datetime
+
+# 加载 .env 文件中的环境变量
+load_dotenv()
 
 # 导入数据库工具类
 try:
