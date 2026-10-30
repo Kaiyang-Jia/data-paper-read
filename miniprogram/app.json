@@ -1,0 +1,41 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/search/search",
+    "pages/profile/profile",
+    "pages/updates/updates",
+    "pages/detail/detail"
+  ],
+  "window": {
+    "navigationBarTitleText": "DataPaper",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f6f7f8",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#62666b",
+    "selectedColor": "#344c43",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "今日"
+      },
+      {
+        "pagePath": "pages/search/search",
+        "text": "搜索"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      },
+      {
+        "pagePath": "pages/updates/updates",
+        "text": "更新"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

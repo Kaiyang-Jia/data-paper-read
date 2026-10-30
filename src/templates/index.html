@@ -3,80 +3,292 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>追踪科学前沿 - 最新出版的科研数据</title>
-    <!-- 网站图标 - 使用Flask的url_for指向static/icons目录 -->
+    <meta name="description" content="自动聚合科研数据论文，通过 AI 提供中文标题、解读与学科标签。">
+    <title>DataPaper - 用中文追踪科研数据前沿</title>
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
     <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
-    <!-- 字体和样式引用 -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
-    <!-- 页面标题 -->
-    <section class="page-header">
-        <div class="container">
-            <h1 class="page-title">用<span>中文</span>追踪科学数据前沿</h1>
-            <p class="page-description">旨在帮你快速了解世界上最新出版的科研数据。</p>
-        </div>
-    </section>
+<body data-authenticated="{{ 'true' if current_user else 'false' }}" data-login-url="{{ url_for('login') }}">
+    <header class="site-header">
+        <div class="container nav-container">
+            <a class="brand" href="{{ url_for('index') }}" aria-label="DataPaper 首页">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img">
+                        <path d="M7 3.5h7.8L19 7.7v12.8H7z"></path>
+                        <path d="M14.5 3.8V8h4.2M9.8 12h6.4M9.8 15.5h4.8"></path>
+                    </svg>
+                </span>
+                <span>DataPaper</span>
+            </a>
 
-    <!-- 筛选标签 -->
-    <section class="filter-bar">
-        <div class="container">
-            <div class="search-container">
-                <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="搜索论文标题、作者、标签...">
-                    <button id="searchButton" class="search-btn"><i class="search-icon">🔍</i></button>
+            <nav class="main-nav" aria-label="主导航">
+                <a class="active" href="#papers">论文发现</a>
+                <a href="#about">关于项目</a>
+            </nav>
+
+            <div class="nav-actions">
+                <a class="nav-link" href="{{ url_for('feedback') }}">反馈</a>
+                {% if current_user %}
+                    <a class="button button-secondary button-sm" href="{{ url_for('profile') }}">{{ current_user.display_name }}</a>
+                {% else %}
+                    <a class="nav-link" href="{{ url_for('login') }}">登录</a>
+                    <a class="button button-primary button-sm" href="{{ url_for('register') }}">注册</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-glow hero-glow-left" aria-hidden="true"></div>
+            <div class="hero-glow hero-glow-right" aria-hidden="true"></div>
+            <div class="container hero-container">
+                <div class="hero-copy">
+                    <div class="eyebrow">
+                        <span class="eyebrow-dot"></span>
+                        AI 驱动的科研数据论文发现平台
+                    </div>
+                    <h1>用中文，更快读懂<br><span>全球科研数据前沿</span></h1>
+                    <p class="hero-description">
+                        自动聚合高质量数据论文，通过 AI 生成中文标题、核心解读与学科标签，让发现有价值的科研数据更简单。
+                    </p>
+                    <div class="data-status-card" aria-label="数据更新状态">
+                        <div>
+                            <span>数据更新时间</span>
+                            <strong>{{ data_status.last_data_updated_at or '待更新' }}</strong>
+                        </div>
+                        <div>
+                            <span>最新论文日期</span>
+                            <strong>{{ data_status.latest_publish_date or '暂无数据' }}</strong>
+                        </div>
+                        <div>
+                            <span>已收录论文</span>
+                            <strong>{{ data_status.total_count }} 篇</strong>
+                        </div>
+                    </div>
+                    <div class="hero-actions">
+                        <a class="button button-primary" href="#research-assistant">
+                            向 AI 描述研究需求
+                            <svg viewBox="0 0 20 20" aria-hidden="true">
+                                <path d="M4 10h12M11.5 5.5 16 10l-4.5 4.5"></path>
+                            </svg>
+                        </a>
+                        <a class="button button-ghost" href="https://www.nature.com/sdata/" target="_blank" rel="noopener noreferrer">查看数据来源</a>
+                    </div>
+                    {% if current_user %}
+                        <a class="personal-feed-link" href="{{ url_for('profile') }}">
+                            <span>已按你的研究领域匹配论文</span>
+                            查看个性化推荐
+                        </a>
+                    {% else %}
+                        <a class="personal-feed-link" href="{{ url_for('register') }}">
+                            <span>保存研究领域</span>
+                            注册后获取个性化论文推荐
+                        </a>
+                    {% endif %}
+                    <div class="hero-proof">
+                        <div class="proof-item">
+                            <strong>自动聚合</strong>
+                            <span>持续追踪期刊更新</span>
+                        </div>
+                        <div class="proof-divider"></div>
+                        <div class="proof-item">
+                            <strong>中文解读</strong>
+                            <span>快速理解研究价值</span>
+                        </div>
+                        <div class="proof-divider"></div>
+                        <div class="proof-item">
+                            <strong>学科分类</strong>
+                            <span>定位关注的研究方向</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hero-visual" aria-hidden="true">
+                    <div class="visual-orbit orbit-one"></div>
+                    <div class="visual-orbit orbit-two"></div>
+                    <div class="visual-card visual-card-main">
+                        <div class="visual-card-header">
+                            <span class="visual-icon">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M6.5 3.5h8L18.5 8v12.5h-12z"></path>
+                                    <path d="M14 4v4.5h4M9 12h7M9 15.5h5"></path>
+                                </svg>
+                            </span>
+                            <div>
+                                <span class="visual-label">NEW PAPER</span>
+                                <strong>科研数据论文</strong>
+                            </div>
+                        </div>
+                        <div class="visual-lines">
+                            <span></span><span></span><span></span>
+                        </div>
+                        <div class="visual-tags">
+                            <span>AI 中文解读</span>
+                            <span>开放数据</span>
+                        </div>
+                    </div>
+                    <div class="visual-card visual-card-small visual-card-top">
+                        <span class="status-dot"></span>
+                        <span>期刊数据持续更新</span>
+                    </div>
+                    <div class="visual-card visual-card-small visual-card-bottom">
+                        <svg viewBox="0 0 20 20">
+                            <path d="m4 10 3.5 3.5L16 5"></path>
+                        </svg>
+                        <span>AI 解读已完成</span>
+                    </div>
                 </div>
             </div>
-            <!-- Removed h2 title -->
-            <div id="subjectFilter" class="filter-tags"> 
-                <div class="tag-pill active" data-tag="全部">全部</div>
-                <!-- JavaScript will populate other filters here -->
-            </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- 论文列表部分 -->
-    <section class="nature-section">
-        <div class="container">
-            <h2 class="section-title">最新出版的科研数据论文</h2>
-            
-            <!-- 状态消息区域 -->
-            <div id="statusMessage" class="alert" style="display: none;"></div>
-            
-            <div class="paper-grid" id="articlesList">
-                <!-- 论文卡片将由 JavaScript 动态生成 -->
-            </div>
+        <section class="assistant-section" id="research-assistant">
+            <div class="container">
+                <div class="assistant-shell">
+                    <div class="assistant-intro">
+                        <span class="assistant-mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 3.5 14 8l4.5 2-4.5 2-2 4.5-2-4.5-4.5-2L10 8z"></path>
+                                <path d="m18 16 .8 1.8 1.7.7-1.7.8L18 21l-.8-1.7-1.7-.8 1.7-.7z"></path>
+                            </svg>
+                        </span>
+                        <div>
+                            <span class="section-kicker">RESEARCH ASSISTANT</span>
+                            <h2>告诉我你想做什么研究</h2>
+                            <p>描述研究对象、区域、时间尺度或分析目标，我会从论文库中推荐更合适的数据资源。</p>
+                        </div>
+                    </div>
 
-            <!-- 分页控制 -->
-            <div class="pagination-container">
-                <div class="pagination" id="pagination"></div>
-            </div>
-            
-            <!-- 无数据提示由 JavaScript 动态处理 -->
-        </div>
-    </section>
+                    <div class="assistant-chat">
+                        <div class="assistant-message assistant-message-ai">
+                            <span class="message-avatar">AI</span>
+                            <div>
+                                <strong>科研数据发现助手</strong>
+                                <p>例如：我想研究中国城市热岛与极端高温的关系，需要长期遥感数据。</p>
+                            </div>
+                        </div>
 
-    <!-- 论文详情模态框 -->
-    <div id="articleDetailModal" class="modal">
+                        <form id="researchAssistantForm" class="assistant-form">
+                            <textarea id="researchQuestion" rows="3" maxlength="1000" placeholder="描述你的研究需求，例如研究主题、地区、年份、分辨率或准备解决的问题..." aria-label="描述研究需求" required></textarea>
+                            <div class="assistant-form-footer">
+                                <div class="assistant-examples" aria-label="示例问题">
+                                    <button type="button" data-question="我想研究中国城市热岛与极端高温，需要长期遥感数据">城市热岛</button>
+                                    <button type="button" data-question="我想分析全球海洋微塑料污染分布，需要可比较的观测数据库">海洋微塑料</button>
+                                    <button type="button" data-question="我正在做蛋白质结构预测，需要开放的机器学习训练数据">蛋白质预测</button>
+                                </div>
+                                <button id="askAssistantButton" class="button button-primary assistant-submit" type="submit">
+                                    <span>查找数据</span>
+                                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                                        <path d="M4 10h12M11.5 5.5 16 10l-4.5 4.5"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </form>
+
+                        <div id="assistantResponse" class="assistant-response" aria-live="polite"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="paper-section" id="papers">
+            <div class="container">
+                <div class="section-heading">
+                    <div>
+                        <span class="section-kicker">EXPLORE</span>
+                        <h2>发现最新科研数据</h2>
+                        <p>从最新发布的数据论文中，找到值得关注的研究与开放数据集。</p>
+                    </div>
+                    <div class="result-summary" id="resultSummary" aria-live="polite">
+                        正在加载论文...
+                    </div>
+                </div>
+                <div class="section-note">
+                    <span>数据更新：{{ data_status.last_data_updated_at or '待更新' }}</span>
+                    <span>AI 生成的中文标题、解读、标签和推荐仅用于辅助发现，请以原始论文与数据源为准。</span>
+                </div>
+
+                <div class="filter-panel">
+                    <div class="search-box">
+                        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="6.5"></circle>
+                            <path d="m16 16 4 4"></path>
+                        </svg>
+                        <input type="search" id="searchInput" placeholder="搜索中文标题、英文标题、摘要或标签" aria-label="搜索论文">
+                        <button id="clearSearchButton" class="clear-search-btn" type="button" aria-label="清除搜索" hidden>&times;</button>
+                        <button id="searchButton" class="search-btn" type="button">搜索</button>
+                    </div>
+                    <div class="filter-row">
+                        <span class="filter-label">研究领域</span>
+                        <div id="subjectFilter" class="filter-tags">
+                            <button class="tag-pill active" type="button" data-subject="全部">全部</button>
+                        </div>
+                    </div>
+                    <div class="advanced-filters">
+                        <label class="select-field">
+                            <span>期刊来源</span>
+                            <select id="journalFilter">
+                                <option value="全部">全部期刊</option>
+                            </select>
+                        </label>
+                        <label class="select-field">
+                            <span>发布时间</span>
+                            <select id="dateFilter">
+                                <option value="all">全部时间</option>
+                                <option value="7">最近 7 天</option>
+                                <option value="30">最近 30 天</option>
+                                <option value="90">最近 3 个月</option>
+                                <option value="365">最近一年</option>
+                            </select>
+                        </label>
+                        <label class="select-field">
+                            <span>排序方式</span>
+                            <select id="sortFilter">
+                                <option value="newest">最新发布</option>
+                                <option value="oldest">最早发布</option>
+                                <option value="title">标题 A-Z</option>
+                            </select>
+                        </label>
+                        <button id="resetFiltersButton" class="reset-filters-btn" type="button">
+                            <svg viewBox="0 0 20 20" aria-hidden="true">
+                                <path d="M4.5 6.5h11M7 10h6M9 13.5h2"></path>
+                            </svg>
+                            重置筛选
+                        </button>
+                    </div>
+                    <div id="activeFilters" class="active-filters" aria-live="polite"></div>
+                </div>
+
+                <div id="statusMessage" class="alert" style="display: none;" role="status"></div>
+                <div class="paper-grid" id="articlesList"></div>
+                <div class="pagination-container">
+                    <div class="pagination" id="pagination" aria-label="论文分页"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="articleDetailModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="modalTitle">论文标题</h2>
-                <span id="closeModal" class="close-btn">&times;</span>
+                <div>
+                    <span class="modal-kicker">论文详情</span>
+                    <h2 id="modalTitle">论文标题</h2>
+                </div>
+                <button id="closeModal" class="close-btn" type="button" aria-label="关闭详情">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="modal-info">
                     <p id="modalAuthors" class="modal-authors">作者信息</p>
                     <p id="modalDate" class="modal-date">发布日期</p>
-                    <div id="modalDoi" class="modal-doi">
-                        <strong>DOI: </strong><span></span>
-                    </div>
+                    <div id="modalDoi" class="modal-doi"><strong>DOI: </strong><span></span></div>
                 </div>
                 <div class="modal-section">
-                    <h3>中文解读摘要</h3>
+                    <h3>中文解读</h3>
                     <p id="modalAbstract" class="modal-abstract">论文摘要内容</p>
                 </div>
                 <div id="modalDatasets" class="modal-section">
@@ -85,43 +297,55 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <a id="modalLink" href="#" target="_blank" class="modal-link-btn">查看原文</a>
-                <button class="close-btn-secondary">关闭</button>
+                <button class="button button-secondary close-btn-secondary" type="button">关闭</button>
+                <button id="modalFavoriteButton" class="button button-secondary favorite-button" type="button">收藏论文</button>
+                <a id="modalLink" href="#" target="_blank" rel="noopener noreferrer" class="button button-primary">查看原文</a>
             </div>
         </div>
     </div>
 
-    <!-- 加载中指示器 -->
-    <div id="loadingOverlay" style="display: none;">
-        <div class="spinner-border" role="status">
-            <span class="visually-hidden">加载中...</span>
-        </div>
-        <p>正在获取数据，请稍候...</p>
+    <div id="loadingOverlay" style="display: none;" aria-live="polite">
+        <div class="spinner-border" role="status"></div>
+        <p>正在获取最新论文...</p>
     </div>
 
-    <footer class="footer">
+    <footer class="footer" id="about">
         <div class="container footer-container">
-            <div class="footer-section footer-info">
-                <div class="footer-logo">AI4Science</div>
-                <p class="footer-description">基于RSS订阅，DeepSeek提供中文翻译与总结。Inspired by <a href="https://zeli.app/zh" target="_blank">zeli</a>.</p>
+            <div class="footer-brand">
+                <a class="brand brand-footer" href="{{ url_for('index') }}">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M7 3.5h7.8L19 7.7v12.8H7z"></path>
+                            <path d="M14.5 3.8V8h4.2M9.8 12h6.4M9.8 15.5h4.8"></path>
+                        </svg>
+                    </span>
+                    <span>DataPaper</span>
+                </a>
+            <p>让科研数据论文的发现与理解更高效。</p>
+                <p class="footer-disclaimer">
+                    AI 内容由模型根据论文元数据和摘要生成，可能存在遗漏或误差，不构成学术、医疗、法律或投资建议。
+                </p>
             </div>
-            <div class="footer-section footer-links">
-                <h4>快速链接</h4>
-                <ul>
-                    <li><a href="https://www.nature.com/sdata/" target="_blank">Nature Scientific Data</a></li>
-                    <li><a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank">GitHub </a></li>
-                    <li><a href="{{ url_for('feedback') }}">提供反馈</a></li>
-                </ul>
-            </div>
-            <div class="footer-section footer-contact">
-                <h4>联系方式</h4>
-                <p><a href="mailto:jiakaiyang96@gmail.com">jiakaiyang96@gmail.com</a></p>
+            <div class="footer-links">
+                <div>
+                    <h3>产品</h3>
+                    <a href="#papers">论文发现</a>
+                    <a href="{{ url_for('feedback') }}">提供反馈</a>
+                </div>
+                <div>
+                    <h3>资源</h3>
+                    <a href="https://www.nature.com/sdata/" target="_blank" rel="noopener noreferrer">Scientific Data</a>
+                    <a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank" rel="noopener noreferrer">GitHub</a>
+                </div>
+                <div>
+                    <h3>联系</h3>
+                    <a href="mailto:jiakaiyang96@gmail.com">电子邮箱</a>
+                </div>
             </div>
         </div>
-        <div class="footer-bottom">
-            <div class="container">
-                <p class="copyright">Copyright &copy; 2025 Kaiyang Jia | All rights reserved. | 宁ICP备2025008091号</a></p>
-            </div>
+        <div class="container footer-bottom">
+            <p>&copy; 2026 DataPaper. 数据更新时间：{{ data_status.last_data_updated_at or '待更新' }}。</p>
+            <p>宁ICP备2025008091号</p>
         </div>
     </footer>
 

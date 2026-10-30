@@ -1,0 +1,50 @@
+<view class="page">
+  <view class="intro">
+    <view class="kicker">RESEARCH ASSISTANT</view>
+    <view class="title">告诉我你想做什么研究</view>
+    <view class="desc">描述研究对象、区域、时间尺度或分析目标，我会从论文库中推荐合适的数据资源。</view>
+  </view>
+
+  <view class="chat card">
+    <view class="ai-message">
+      <view class="avatar">AI</view>
+      <view>例如：我想研究中国城市热岛与极端高温的关系，需要长期遥感数据。</view>
+    </view>
+    <textarea
+      value="{{question}}"
+      bindinput="onInput"
+      maxlength="1000"
+      placeholder="输入你的研究需求..."
+      auto-height
+    />
+    <view class="examples">
+      <view
+        wx:for="{{examples}}"
+        wx:key="*this"
+        class="example"
+        data-question="{{item}}"
+        bindtap="useExample"
+      >{{index + 1}}. {{item}}</view>
+    </view>
+    <button class="primary-button" loading="{{loading}}" disabled="{{loading}}" bindtap="submit">
+      {{loading ? '正在匹配...' : '查找数据'}}
+    </button>
+  </view>
+
+  <view wx:if="{{answer}}" class="answer card">
+    <view class="answer-title">助手建议</view>
+    <view>{{answer}}</view>
+  </view>
+
+  <view
+    wx:for="{{recommendations}}"
+    wx:key="_key"
+    class="recommendation card"
+    data-index="{{index}}"
+    bindtap="openDetail"
+  >
+    <view class="recommendation-meta">{{item.Subject || '相关论文'}} · {{item.journal || '期刊未知'}}</view>
+    <view class="recommendation-title">{{item.displayTitle}}</view>
+    <view class="recommendation-reason">{{item.reason || '与当前研究需求具有较高相关性。'}}</view>
+  </view>
+</view>

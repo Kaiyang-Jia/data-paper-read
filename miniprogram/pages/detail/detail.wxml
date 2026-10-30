@@ -1,0 +1,22 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="empty">正在打开论文…</view>
+  <view wx:if="{{error}}" class="status" bindtap="loadArticle">{{error}}</view>
+  <block wx:if="{{article}}">
+    <view class="card">
+      <view class="paper-meta"><text>{{article.journal}}</text><text>{{article.publishDate}}</text></view>
+      <view class="heading">{{article.displayTitle}}</view>
+      <view class="muted">{{article.title}}</view>
+      <view wx:if="{{article.displayIntro}}" class="intro">{{article.displayIntro}}</view>
+      <view wx:if="{{article.authors}}" class="muted">{{article.authors}}</view>
+      <view wx:if="{{article.doi}}" class="doi" bindtap="copyDoi">DOI · {{article.doi}}</view>
+      <view wx:if="{{article.chineseProcessing.basis === 'title'}}" class="muted">当前介绍依据标题，数据细节请查看原文。</view>
+    </view>
+    <view class="actions">
+      <button class="{{article.favorite ? 'selected' : ''}}" bindtap="toggleFavorite">{{article.favorite ? '已收藏' : '收藏'}}</button>
+      <button class="{{article.later ? 'selected' : ''}}" bindtap="toggleLater">{{article.later ? '已加入稍后读' : '稍后读'}}</button>
+      <button open-type="share">分享给同行</button>
+      <button wx:if="{{article.url || article.doi}}" bindtap="openSource">复制原文链接</button>
+      <button wx:if="{{article.later}}" bindtap="markRead">已读完</button>
+    </view>
+  </block>
+</view>

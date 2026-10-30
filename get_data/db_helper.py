@@ -15,6 +15,7 @@ import logging
 import pymysql
 from datetime import datetime
 import json
+import secrets
 
 # 导入数据库配置
 try:
@@ -76,7 +77,7 @@ class DBHelper:
                         publishDate VARCHAR(20),
                         doi VARCHAR(255) UNIQUE,
                         url VARCHAR(500),
-                        authors VARCHAR(500),
+                        authors TEXT,
                         tags TEXT,
                         journal VARCHAR(255),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -98,7 +99,7 @@ class DBHelper:
                         publishDate VARCHAR(20),
                         doi VARCHAR(255) UNIQUE,
                         url VARCHAR(500),
-                        authors VARCHAR(500),
+                        authors TEXT,
                         tags TEXT,
                         Subject VARCHAR(50),
                         journal VARCHAR(255),
@@ -110,6 +111,97 @@ class DBHelper:
                         INDEX idx_date (publishDate)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
+
+                # 创建用户表。当前只保存认证信息和用于论文推荐的研究领域。
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        email VARCHAR(255) NOT NULL UNIQUE,
+                        password_hash VARCHAR(255) NOT NULL,
+                        display_name VARCHAR(100) NOT NULL,
+                        research_field VARCHAR(500) NOT NULL,
+                        email_subscribed BOOLEAN NOT NULL DEFAULT FALSE,
+                        email_frequency VARCHAR(20) NOT NULL DEFAULT 'weekly',
+                        unsubscribe_token VARCHAR(64) UNIQUE,
+                        last_email_sent_at DATETIME NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_user_email (email)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_favorites (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        article_key VARCHAR(700) NOT NULL,
+                        doi VARCHAR(255),
+                        url VARCHAR(500),
+                        title VARCHAR(500),
+                        title_cn VARCHAR(500),
+                        journal VARCHAR(255),
+                        subject VARCHAR(100),
+                        publish_date VARCHAR(20),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_user_favorite (user_id, article_key(500)),
+                        INDEX idx_favorite_user_created (user_id, created_at),
+                        CONSTRAINT fk_favorite_user FOREIGN KEY (user_id)
+                            REFERENCES users(id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS user_reading_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        user_id INT NOT NULL,
+                        article_key VARCHAR(700) NOT NULL,
+                        doi VARCHAR(255),
+                        url VARCHAR(500),
+                        title VARCHAR(500),
+                        title_cn VARCHAR(500),
+                        journal VARCHAR(255),
+                        subject VARCHAR(100),
+                        publish_date VARCHAR(20),
+                        view_count INT NOT NULL DEFAULT 1,
+                        first_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_user_history (user_id, article_key(500)),
+                        INDEX idx_history_user_last_read (user_id, last_read_at),
+                        CONSTRAINT fk_history_user FOREIGN KEY (user_id)
+                            REFERENCES users(id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
+
+                # 为已经存在的 users 表补充订阅字段。
+                cursor.execute("SHOW COLUMNS FROM users")
+                user_columns = {row[0] for row in cursor.fetchall()}
+                subscription_columns = {
+                    'email_subscribed': "BOOLEAN NOT NULL DEFAULT FALSE",
+                    'email_frequency': "VARCHAR(20) NOT NULL DEFAULT 'weekly'",
+                    'unsubscribe_token': "VARCHAR(64) NULL UNIQUE",
+                    'last_email_sent_at': "DATETIME NULL",
+                }
+                for column_name, definition in subscription_columns.items():
+                    if column_name not in user_columns:
+                        cursor.execute(
+                            f"ALTER TABLE users ADD COLUMN {column_name} {definition}"
+                        )
+
+                cursor.execute("""
+                    UPDATE users
+                    SET unsubscribe_token = %s
+                    WHERE unsubscribe_token IS NULL OR unsubscribe_token = ''
+                    LIMIT 1
+                """, (secrets.token_urlsafe(32),))
+                cursor.execute("""
+                    SELECT id FROM users
+                    WHERE unsubscribe_token IS NULL OR unsubscribe_token = ''
+                """)
+                users_without_token = [row[0] for row in cursor.fetchall()]
+                for user_id in users_without_token:
+                    cursor.execute("""
+                        UPDATE users SET unsubscribe_token = %s WHERE id = %s
+                    """, (secrets.token_urlsafe(32), user_id))
                 
                 connection.commit()
                 logger.info("数据库表初始化完成")
@@ -564,6 +656,373 @@ class DBHelper:
         except Exception as e:
             logger.error(f"获取学科分类失败: {e}")
             return []
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_processed_papers_summary():
+        """获取处理后论文库的展示统计信息。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            logger.error("无法连接到数据库，获取论文库统计信息失败")
+            return {}
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) AS total_count,
+                        MAX(updated_at) AS last_data_updated_at,
+                        MAX(publishDate) AS latest_publish_date
+                    FROM processed_papers
+                """)
+                return cursor.fetchone() or {}
+        except Exception as e:
+            logger.error(f"获取论文库统计信息失败: {e}")
+            return {}
+        finally:
+            connection.close()
+
+    @staticmethod
+    def create_user(email, password_hash, display_name, research_field):
+        """创建用户并返回用户 ID；邮箱已存在时返回 None。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO users (email, password_hash, display_name, research_field)
+                    VALUES (%s, %s, %s, %s)
+                """, (email, password_hash, display_name, research_field))
+                user_id = cursor.lastrowid
+                cursor.execute("""
+                    UPDATE users SET unsubscribe_token = %s WHERE id = %s
+                """, (secrets.token_urlsafe(32), user_id))
+                connection.commit()
+                return user_id
+        except pymysql.err.IntegrityError:
+            connection.rollback()
+            return None
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_by_email(email):
+        """按邮箱获取用户认证资料。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, email, password_hash, display_name, research_field,
+                           email_subscribed, email_frequency, unsubscribe_token,
+                           last_email_sent_at, created_at, updated_at
+                    FROM users
+                    WHERE email = %s
+                """, (email,))
+                return cursor.fetchone()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_by_id(user_id):
+        """按 ID 获取用户公开资料。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, email, display_name, research_field, email_subscribed,
+                           email_frequency, unsubscribe_token, last_email_sent_at,
+                           created_at, updated_at
+                    FROM users
+                    WHERE id = %s
+                """, (user_id,))
+                return cursor.fetchone()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def update_email_subscription(user_id, subscribed, frequency):
+        """更新用户的邮件订阅状态和发送频率。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users
+                    SET email_subscribed = %s, email_frequency = %s
+                    WHERE id = %s
+                """, (bool(subscribed), frequency, user_id))
+                connection.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_due_email_subscribers(now=None):
+        """获取当前应发送推荐邮件的订阅用户。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        current_time = now or datetime.now()
+        daily_cutoff = current_time.replace(microsecond=0)
+        weekly_cutoff = current_time.replace(microsecond=0)
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, email, display_name, research_field, email_frequency,
+                           unsubscribe_token, last_email_sent_at
+                    FROM users
+                    WHERE email_subscribed = TRUE
+                      AND (
+                          last_email_sent_at IS NULL
+                          OR (email_frequency = 'daily'
+                              AND last_email_sent_at <= DATE_SUB(%s, INTERVAL 1 DAY))
+                          OR (email_frequency = 'weekly'
+                              AND last_email_sent_at <= DATE_SUB(%s, INTERVAL 7 DAY))
+                      )
+                    ORDER BY id
+                """, (daily_cutoff, weekly_cutoff))
+                return cursor.fetchall()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def mark_subscription_email_sent(user_id, sent_at=None):
+        """记录用户最近一次推荐邮件发送时间。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users SET last_email_sent_at = %s WHERE id = %s
+                """, (sent_at or datetime.now(), user_id))
+                connection.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_by_unsubscribe_token(token):
+        """按退订令牌获取用户。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, email, display_name, email_subscribed
+                    FROM users
+                    WHERE unsubscribe_token = %s
+                """, (token,))
+                return cursor.fetchone()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def update_user_profile(user_id, display_name, research_field):
+        """更新用户昵称和研究领域。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE users
+                    SET display_name = %s, research_field = %s
+                    WHERE id = %s
+                """, (display_name, research_field, user_id))
+                connection.commit()
+                return cursor.rowcount > 0
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def toggle_favorite(user_id, article, should_favorite):
+        """添加或取消论文收藏。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        article_key = article['article_key']
+        try:
+            with connection.cursor() as cursor:
+                if should_favorite:
+                    cursor.execute("""
+                        INSERT INTO user_favorites (
+                            user_id, article_key, doi, url, title, title_cn,
+                            journal, subject, publish_date
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            doi = VALUES(doi),
+                            url = VALUES(url),
+                            title = VALUES(title),
+                            title_cn = VALUES(title_cn),
+                            journal = VALUES(journal),
+                            subject = VALUES(subject),
+                            publish_date = VALUES(publish_date)
+                    """, (
+                        user_id, article_key, article.get('doi'), article.get('url'),
+                        article.get('title'), article.get('titleCn'),
+                        article.get('journal'), article.get('Subject'),
+                        article.get('publishDate')
+                    ))
+                else:
+                    cursor.execute("""
+                        DELETE FROM user_favorites
+                        WHERE user_id = %s AND article_key = %s
+                    """, (user_id, article_key))
+                connection.commit()
+                return should_favorite
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def record_article_read(user_id, article):
+        """记录一次论文阅读，重复阅读时累计次数。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO user_reading_history (
+                        user_id, article_key, doi, url, title, title_cn,
+                        journal, subject, publish_date
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        doi = VALUES(doi),
+                        url = VALUES(url),
+                        title = VALUES(title),
+                        title_cn = VALUES(title_cn),
+                        journal = VALUES(journal),
+                        subject = VALUES(subject),
+                        publish_date = VALUES(publish_date),
+                        view_count = view_count + 1,
+                        last_read_at = CURRENT_TIMESTAMP
+                """, (
+                    user_id, article['article_key'], article.get('doi'),
+                    article.get('url'), article.get('title'), article.get('titleCn'),
+                    article.get('journal'), article.get('Subject'),
+                    article.get('publishDate')
+                ))
+                connection.commit()
+                return True
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_favorites(user_id, limit=100):
+        """获取用户收藏，按收藏时间倒序。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT article_key, doi, url, title, title_cn AS titleCn,
+                           journal, subject AS Subject, publish_date AS publishDate,
+                           created_at
+                    FROM user_favorites
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """, (user_id, limit))
+                return cursor.fetchall()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_reading_history(user_id, limit=100):
+        """获取用户最近阅读记录。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor(pymysql.cursors.DictCursor) as cursor:
+                cursor.execute("""
+                    SELECT article_key, doi, url, title, title_cn AS titleCn,
+                           journal, subject AS Subject, publish_date AS publishDate,
+                           view_count, first_read_at, last_read_at
+                    FROM user_reading_history
+                    WHERE user_id = %s
+                    ORDER BY last_read_at DESC
+                    LIMIT %s
+                """, (user_id, limit))
+                return cursor.fetchall()
+        finally:
+            connection.close()
+
+    @staticmethod
+    def get_user_library_state(user_id):
+        """返回前端需要的收藏标识集合。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT article_key FROM user_favorites WHERE user_id = %s
+                """, (user_id,))
+                return [row[0] for row in cursor.fetchall()]
+        finally:
+            connection.close()
+
+    @staticmethod
+    def clear_reading_history(user_id):
+        """清空用户阅读记录。"""
+        connection = DBHelper.get_connection()
+        if not connection:
+            raise RuntimeError("数据库连接失败")
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM user_reading_history WHERE user_id = %s",
+                    (user_id,)
+                )
+                connection.commit()
+                return True
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 

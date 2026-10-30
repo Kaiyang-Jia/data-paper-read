@@ -62,6 +62,13 @@ class RSSCrawler:
         # 初始化数据库表
         if DBHelper:
             DBHelper.initialize_tables()
+
+    @staticmethod
+    def normalize_doi(value):
+        """统一 DOI 格式，避免 URL、前缀和大小写导致重复。"""
+        doi = str(value or "").strip()
+        doi = re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", doi, flags=re.I)
+        return doi.lower().strip()
             
     def get_existing_dois(self):
         """获取数据库中已存在的所有DOI，用于去重"""
@@ -74,7 +81,11 @@ class RSSCrawler:
                     
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT doi FROM raw_papers WHERE doi IS NOT NULL AND doi != ''")
-                    existing_dois = {row[0] for row in cursor.fetchall()}
+                    existing_dois = {
+                        self.normalize_doi(row[0])
+                        for row in cursor.fetchall()
+                        if row[0]
+                    }
                     logger.info(f"从数据库获取到 {len(existing_dois)} 个现有DOI")
                     return existing_dois
             except Exception as e:
@@ -207,7 +218,7 @@ class RSSCrawler:
                 logger.info(f"{journal_name} RSS包含 {len(feed.entries)} 条条目")
                 for i, entry in enumerate(feed.entries):
                     # 先尝试获取DOI，提前检查是否重复
-                    doi = entry.get("dc_identifier", "").replace("doi:", "") if "dc_identifier" in entry else entry.get("guid", "")
+                    doi = entry.get("dc_identifier", "") if "dc_identifier" in entry else entry.get("guid", "")
                     url = entry.get("link", "")
                     if not doi and url and "doi.org" in url:
                         try:
@@ -219,6 +230,7 @@ class RSSCrawler:
                             doi = url.split("articles/")[1]
                         except IndexError:
                             pass
+                    doi = self.normalize_doi(doi)
                     
                     # 提前检查DOI是否存在，如果存在则跳过该条目
                     if not doi:
@@ -338,6 +350,7 @@ class RSSCrawler:
                             if DBHelper.insert_raw_paper(paper_data):
                                 db_saved_count += 1
                                 journal_saved += 1
+                                existing_dois.add(doi)
                 
                 # 期刊处理完成后输出统计
                 logger.info(f"{journal_name} 爬取完成，共处理 {len(feed.entries)} 条目，跳过 {journal_skipped} 条已存在条目，插入 {journal_saved} 条新数据")

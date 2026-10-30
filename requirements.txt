@@ -8,6 +8,9 @@ python-dotenv
 python-dateutil
 soupsieve
 requests
+pymysql
+faiss-cpu
+numpy
 
 # NLP 处理和数据科学相关
 pydantic

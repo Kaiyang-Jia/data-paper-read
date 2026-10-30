@@ -3,207 +3,171 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>提供反馈 - 科研数据平台</title>
-    <!-- 网站图标 -->
+    <title>提供反馈 - DataPaper</title>
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
     <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
-    <!-- 字体和样式引用 -->
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <style>
-        /* 反馈表单特定样式 */
-        .feedback-section {
-            padding: 40px 0;
-            min-height: calc(100vh - 300px);
-        }
-        
-        .feedback-form {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 30px;
-            background-color: #fff;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #333;
-        }
-        
-        .form-control {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-            font-family: 'Noto Sans SC', sans-serif;
-        }
-        
-        textarea.form-control {
-            min-height: 150px;
-            resize: vertical;
-        }
-        
-        .submit-btn {
-            background-color: #1a73e8;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background-color 0.2s;
-        }
-        
-        .submit-btn:hover {
-            background-color: #0d66d0;
-        }
-        
-        .required-mark {
-            color: #d9534f;
-            margin-left: 4px;
-        }
-        
-        .success-message {
-            padding: 15px;
-            background-color: #d4edda;
-            border-color: #c3e6cb;
-            color: #155724;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .back-link {
-            display: inline-block;
-            margin-top: 20px;
-            color: #1a73e8;
-            text-decoration: none;
-        }
-        
-        .back-link:hover {
-            text-decoration: underline;
-        }
-    </style>
 </head>
 <body>
-    <!-- 页面标题 -->
-    <section class="page-header">
-        <div class="container">
-            <h1 class="page-title">用户反馈</h1>
-            <p class="page-description">您的反馈对我们非常重要，帮助我们不断提升服务质量。</p>
-        </div>
-    </section>
-
-    <!-- 反馈表单 -->
-    <section class="feedback-section">
-        <div class="container">
-            <div id="successMessage" class="success-message">
-                感谢您的反馈！我们已收到您的信息。
+    <header class="site-header">
+        <div class="container nav-container">
+            <a class="brand" href="{{ url_for('index') }}" aria-label="DataPaper 首页">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M7 3.5h7.8L19 7.7v12.8H7z"></path>
+                        <path d="M14.5 3.8V8h4.2M9.8 12h6.4M9.8 15.5h4.8"></path>
+                    </svg>
+                </span>
+                <span>DataPaper</span>
+            </a>
+            <nav class="main-nav" aria-label="主导航">
+                <a href="{{ url_for('index') }}#papers">论文发现</a>
+                <a href="{{ url_for('index') }}#about">关于项目</a>
+            </nav>
+            <div class="nav-actions">
+                <a class="nav-link active" href="{{ url_for('feedback') }}">反馈</a>
+                {% if current_user %}
+                    <a class="button button-secondary button-sm" href="{{ url_for('profile') }}">{{ current_user.display_name }}</a>
+                {% else %}
+                    <a class="nav-link" href="{{ url_for('login') }}">登录</a>
+                    <a class="button button-primary button-sm" href="{{ url_for('register') }}">注册</a>
+                {% endif %}
             </div>
-            
-            <form id="feedbackForm" class="feedback-form" method="post" action="{{ url_for('submit_feedback') }}">
-                <div class="form-group">
-                    <label for="feedbackTitle">反馈标题<span class="required-mark">*</span></label>
-                    <input type="text" id="feedbackTitle" name="title" class="form-control" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="feedbackContent">反馈内容<span class="required-mark">*</span></label>
-                    <textarea id="feedbackContent" name="content" class="form-control" required></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label for="userName">您的称呼</label>
-                    <input type="text" id="userName" name="name" class="form-control">
-                </div>
-                
-                <div class="form-group">
-                    <label for="userContact">联系方式（邮箱）</label>
-                    <input type="text" id="userContact" name="contact" class="form-control">
-                </div>
-                
-                <div class="form-group">
-                    <button type="submit" class="submit-btn">提交反馈</button>
-                </div>
-            </form>
-            
-            <a href="{{ url_for('index') }}" class="back-link">返回首页</a>
         </div>
-    </section>
+    </header>
+
+    <main class="feedback-page">
+        <section class="feedback-hero">
+            <div class="container">
+                <span class="section-kicker">FEEDBACK</span>
+                <h1>帮助我们把产品做得更好</h1>
+                <p>欢迎告诉我们使用中遇到的问题、期待的新功能，或者任何改进建议。</p>
+            </div>
+        </section>
+
+        <section class="feedback-section">
+            <div class="container feedback-layout">
+                <aside class="feedback-aside">
+                    <span class="eyebrow">
+                        <span class="eyebrow-dot"></span>
+                        你的意见很重要
+                    </span>
+                    <h2>每一条反馈都会被认真阅读</h2>
+                    <p>尽量描述具体的使用场景和预期结果，这能帮助我们更快理解和改进。</p>
+                    <a class="feedback-back" href="{{ url_for('index') }}">
+                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                            <path d="M16 10H4M8.5 5.5 4 10l4.5 4.5"></path>
+                        </svg>
+                        返回论文发现
+                    </a>
+                </aside>
+
+                <div class="feedback-card">
+                    <div id="feedbackMessage" class="feedback-message" role="status"></div>
+                    <form id="feedbackForm" method="post" action="{{ url_for('submit_feedback') }}">
+                        <div class="form-group">
+                            <label for="feedbackTitle">反馈标题 <span>*</span></label>
+                            <input type="text" id="feedbackTitle" name="title" class="form-control" placeholder="用一句话概括你的反馈" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="feedbackContent">反馈内容 <span>*</span></label>
+                            <textarea id="feedbackContent" name="content" class="form-control" placeholder="请描述遇到的问题、使用场景或建议..." required></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="userName">你的称呼</label>
+                                <input type="text" id="userName" name="name" class="form-control" placeholder="选填">
+                            </div>
+                            <div class="form-group">
+                                <label for="userContact">联系邮箱</label>
+                                <input type="email" id="userContact" name="contact" class="form-control" placeholder="选填">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="button button-primary feedback-submit">
+                            提交反馈
+                            <svg viewBox="0 0 20 20" aria-hidden="true">
+                                <path d="M4 10h12M11.5 5.5 16 10l-4.5 4.5"></path>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
 
     <footer class="footer">
         <div class="container footer-container">
-            <div class="footer-section footer-info">
-                <div class="footer-logo">AI4Science</div>
-                <p class="footer-description">基于RSS订阅，DeepSeek提供中文翻译与总结。Inspired by <a href="https://zeli.app/zh" target="_blank">zeli</a>.</p>
+            <div class="footer-brand">
+                <a class="brand brand-footer" href="{{ url_for('index') }}">
+                    <span class="brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M7 3.5h7.8L19 7.7v12.8H7z"></path>
+                            <path d="M14.5 3.8V8h4.2M9.8 12h6.4M9.8 15.5h4.8"></path>
+                        </svg>
+                    </span>
+                    <span>DataPaper</span>
+                </a>
+                <p>让科研数据论文的发现与理解更高效。</p>
+                <p class="footer-disclaimer">
+                    AI 内容由模型根据论文元数据和摘要生成，可能存在遗漏或误差，不构成学术、医疗、法律或投资建议。
+                </p>
             </div>
-            <div class="footer-section footer-links">
-                <h4>快速链接</h4>
-                <ul>
-                    <li><a href="https://www.nature.com/sdata/" target="_blank">Nature Scientific Data</a></li>
-                    <li><a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank">GitHub </a></li>
-                    <li><a href="{{ url_for('feedback') }}">提供反馈</a></li>
-                </ul>
-            </div>
-            <div class="footer-section footer-contact">
-                <h4>联系方式</h4>
-                <p><a href="mailto:jiakaiyang96@gmail.com">jiakaiyang96@gmail.com</a></p>
+            <div class="footer-links">
+                <div>
+                    <h3>产品</h3>
+                    <a href="{{ url_for('index') }}#papers">论文发现</a>
+                    <a href="{{ url_for('feedback') }}">提供反馈</a>
+                </div>
+                <div>
+                    <h3>资源</h3>
+                    <a href="https://www.nature.com/sdata/" target="_blank" rel="noopener noreferrer">Scientific Data</a>
+                    <a href="https://github.com/Kaiyang-Jia/data-paper-read" target="_blank" rel="noopener noreferrer">GitHub</a>
+                </div>
             </div>
         </div>
-        <div class="footer-bottom">
-            <div class="container">
-                <p class="copyright">Copyright &copy; 2025 Kaiyang Jia | All rights reserved.</p>
-            </div>
+        <div class="container footer-bottom">
+            <p>&copy; 2026 DataPaper. AI 内容仅供科研信息发现与辅助阅读，请以原始论文与数据源为准。</p>
+            <p>宁ICP备2025008091号</p>
         </div>
     </footer>
 
     <script>
-        // 表单提交处理
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('feedbackForm');
-            const successMessage = document.getElementById('successMessage');
-            
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                // 获取表单数据
-                const formData = new FormData(form);
-                
-                // 发送表单数据
-                fetch('{{ url_for("submit_feedback") }}', {
-                    method: 'POST',
-                    body: formData
+        document.addEventListener("DOMContentLoaded", () => {
+            const form = document.getElementById("feedbackForm");
+            const message = document.getElementById("feedbackMessage");
+            const submitButton = form.querySelector("button[type='submit']");
+
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                submitButton.disabled = true;
+                submitButton.firstChild.textContent = "提交中...";
+
+                fetch(form.action, {
+                    method: "POST",
+                    body: new FormData(form)
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // 显示成功消息
-                        successMessage.style.display = 'block';
-                        // 清空表单
-                        form.reset();
-                        // 3秒后自动隐藏成功消息
-                        setTimeout(() => {
-                            successMessage.style.display = 'none';
-                        }, 5000);
-                    } else {
-                        alert('提交失败，请稍后重试：' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('提交错误:', error);
-                    alert('提交出错，请稍后重试');
-                });
+                    .then((response) => response.json())
+                    .then((data) => {
+                        message.textContent = data.message;
+                        message.className = `feedback-message ${data.success ? "success" : "error"}`;
+                        if (data.success) {
+                            form.reset();
+                        }
+                    })
+                    .catch(() => {
+                        message.textContent = "提交失败，请稍后重试。";
+                        message.className = "feedback-message error";
+                    })
+                    .finally(() => {
+                        submitButton.disabled = false;
+                        submitButton.firstChild.textContent = "提交反馈";
+                    });
             });
         });
     </script>

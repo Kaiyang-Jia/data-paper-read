@@ -1,0 +1,12 @@
+<view class="page">
+  <view class="kicker">WHAT'S NEW</view>
+  <view class="heading">项目在持续更新</view>
+  <view class="muted">新收录的论文、阅读体验与项目进展。</view>
+  <view wx:if="{{loading}}" class="empty">正在加载…</view>
+  <view wx:if="{{error}}" class="empty" bindtap="loadUpdates">{{error}}</view>
+  <view wx:for="{{items}}" wx:key="id" class="card update">
+    <view class="muted">{{item.date}}</view>
+    <view class="paper-title">{{item.title}}</view>
+    <view class="body">{{item.body}}</view>
+  </view>
+</view>

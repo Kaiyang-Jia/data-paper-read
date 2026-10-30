@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}账户 - DataPaper{% endblock %}</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container nav-container">
+            <a class="brand" href="{{ url_for('index') }}">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M7 3.5h7.8L19 7.7v12.8H7z"></path><path d="M14.5 3.8V8h4.2M9.8 12h6.4M9.8 15.5h4.8"></path></svg>
+                </span>
+                <span>DataPaper</span>
+            </a>
+            <div class="nav-actions">
+                <a class="nav-link" href="{{ url_for('index') }}#papers">论文发现</a>
+                {% if current_user %}
+                    <a class="button button-secondary button-sm" href="{{ url_for('profile') }}">个人中心</a>
+                {% else %}
+                    <a class="button button-secondary button-sm" href="{{ url_for('login') }}">登录</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="auth-page">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

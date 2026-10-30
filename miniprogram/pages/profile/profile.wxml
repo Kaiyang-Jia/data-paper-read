@@ -1,0 +1,13 @@
+<import src="../../templates/papers.wxml" />
+<view class="page">
+  <view class="kicker">MY READING LIST</view>
+  <view class="heading">留给有空的自己</view>
+  <view class="muted">收藏值得长期关注的论文，把待阅读的放进稍后读。</view>
+  <view class="tabs">
+    <button class="{{activeTab === 'favorites' ? 'active' : ''}}" data-tab="favorites" bindtap="selectTab">收藏 {{favoriteCount}}</button>
+    <button class="{{activeTab === 'later' ? 'active' : ''}}" data-tab="later" bindtap="selectTab">稍后读 {{laterCount}}</button>
+  </view>
+  <template is="papers" data="{{items: items}}" />
+  <view wx:if="{{!items.length}}" class="empty">还没有{{activeTab === 'later' ? '待阅读' : '收藏'}}的论文，去今日推荐看看</view>
+  <view class="status">清单保存在当前设备，换设备不会自动同步。</view>
+</view>

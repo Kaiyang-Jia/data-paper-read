@@ -1,539 +1,928 @@
-/**
- * Nature数据期刊论文网页交互脚本
- */
-document.addEventListener('DOMContentLoaded', function() {
-    // DOM 元素引用
-    const articlesList = document.getElementById('articlesList');
-    const statusMessage = document.getElementById('statusMessage');
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    const modal = document.getElementById('articleDetailModal');
-    const closeModalBtn = document.getElementById('closeModal');
-    const closeSecondaryBtn = document.querySelector('.close-btn-secondary');
-    // --- 修改：获取 Subject 筛选容器 ---
-    const subjectFilterContainer = document.getElementById('subjectFilter'); // 假设 HTML 中容器 ID 改为 subjectFilter
-    const pagination = document.getElementById('pagination');
-    
-    // --- 搜索相关元素 ---
-    const searchInput = document.getElementById('searchInput');
-    const searchButton = document.getElementById('searchButton');
-    
-    // 全局变量
-    let allArticles = [];
-    // --- 修改：当前筛选条件改为 Subject ---
-    let currentSubject = '全部'; 
-    let currentPage = 1;
-    let currentKeyword = ''; // 新增：当前搜索关键词
-    const articlesPerPage = 10;  // 增加每页显示的文章数量，因为按日期分组后可能会导致每页实际文章数减少
+document.addEventListener("DOMContentLoaded", () => {
+    const elements = {
+        articlesList: document.getElementById("articlesList"),
+        statusMessage: document.getElementById("statusMessage"),
+        loadingOverlay: document.getElementById("loadingOverlay"),
+        modal: document.getElementById("articleDetailModal"),
+        closeModalButton: document.getElementById("closeModal"),
+        closeSecondaryButton: document.querySelector(".close-btn-secondary"),
+        subjectFilter: document.getElementById("subjectFilter"),
+        journalFilter: document.getElementById("journalFilter"),
+        dateFilter: document.getElementById("dateFilter"),
+        sortFilter: document.getElementById("sortFilter"),
+        resetFiltersButton: document.getElementById("resetFiltersButton"),
+        activeFilters: document.getElementById("activeFilters"),
+        pagination: document.getElementById("pagination"),
+        searchInput: document.getElementById("searchInput"),
+        searchButton: document.getElementById("searchButton"),
+        clearSearchButton: document.getElementById("clearSearchButton"),
+        resultSummary: document.getElementById("resultSummary"),
+        assistantForm: document.getElementById("researchAssistantForm"),
+        researchQuestion: document.getElementById("researchQuestion"),
+        askAssistantButton: document.getElementById("askAssistantButton"),
+        assistantResponse: document.getElementById("assistantResponse"),
+        modalFavoriteButton: document.getElementById("modalFavoriteButton")
+    };
 
-    // 加载初始数据
+    const isAuthenticated = document.body.dataset.authenticated === "true";
+    const loginUrl = document.body.dataset.loginUrl || "/login";
+    const state = {
+        articles: [],
+        favoriteKeys: new Set(),
+        keyword: "",
+        subject: "全部",
+        journal: "全部",
+        dateRange: "all",
+        sort: "newest",
+        page: 1
+    };
+
+    const articlesPerPage = 10;
+    let searchTimer = null;
+    let lastFocusedElement = null;
+    let activeModalArticle = null;
+
+    restoreStateFromUrl();
+    bindStaticEvents();
+    loadLibraryState();
     loadArticlesData();
 
-    // 关闭模态框按钮
-    if (closeModalBtn) {
-        closeModalBtn.addEventListener('click', closeModal);
-    }
-    
-    if (closeSecondaryBtn) {
-        closeSecondaryBtn.addEventListener('click', closeModal);
-    }
-    
-    // 点击模态框外部关闭模态框
-    window.addEventListener('click', function(e) {
-        if (e.target === modal) {
-            closeModal();
-        }
-    });
-    
-    // --- 搜索功能：添加事件监听器 ---
-    if (searchButton) {
-        searchButton.addEventListener('click', handleSearch);
-    }
-    
-    if (searchInput) {
-        // 按回车键触发搜索
-        searchInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                handleSearch();
+    function bindStaticEvents() {
+        elements.searchInput?.addEventListener("input", () => {
+            elements.clearSearchButton.hidden = !elements.searchInput.value;
+            window.clearTimeout(searchTimer);
+            searchTimer = window.setTimeout(() => applySearch(false), 320);
+        });
+
+        elements.searchInput?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                window.clearTimeout(searchTimer);
+                applySearch(true);
             }
         });
-        
-        // 输入框清空时，重置搜索
-        searchInput.addEventListener('input', function() {
-            if (this.value === '' && currentKeyword !== '') {
-                currentKeyword = '';
-                loadArticlesData();
+
+        elements.searchButton?.addEventListener("click", () => {
+            window.clearTimeout(searchTimer);
+            applySearch(true);
+        });
+
+        elements.clearSearchButton?.addEventListener("click", () => {
+            elements.searchInput.value = "";
+            elements.clearSearchButton.hidden = true;
+            state.keyword = "";
+            state.page = 1;
+            applyState();
+            elements.searchInput.focus();
+        });
+
+        elements.journalFilter?.addEventListener("change", () => {
+            state.journal = elements.journalFilter.value;
+            state.page = 1;
+            applyState();
+        });
+
+        elements.dateFilter?.addEventListener("change", () => {
+            state.dateRange = elements.dateFilter.value;
+            state.page = 1;
+            applyState();
+        });
+
+        elements.sortFilter?.addEventListener("change", () => {
+            state.sort = elements.sortFilter.value;
+            state.page = 1;
+            applyState();
+        });
+
+        elements.resetFiltersButton?.addEventListener("click", resetFilters);
+        elements.assistantForm?.addEventListener("submit", handleAssistantSubmit);
+        document.querySelectorAll(".assistant-examples button").forEach((button) => {
+            button.addEventListener("click", () => {
+                elements.researchQuestion.value = button.dataset.question || "";
+                elements.researchQuestion.focus();
+            });
+        });
+        elements.closeModalButton?.addEventListener("click", closeModal);
+        elements.closeSecondaryButton?.addEventListener("click", closeModal);
+        elements.modalFavoriteButton?.addEventListener("click", () => {
+            if (activeModalArticle) toggleFavorite(activeModalArticle, elements.modalFavoriteButton);
+        });
+        elements.modal?.addEventListener("click", (event) => {
+            if (event.target === elements.modal) closeModal();
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && elements.modal?.classList.contains("visible")) {
+                closeModal();
             }
         });
+
+        window.addEventListener("popstate", () => {
+            restoreStateFromUrl();
+            syncControls();
+            applyState(false);
+        });
     }
-    
-    // 处理搜索
-    function handleSearch() {
-        const keyword = searchInput.value.trim();
-        if (keyword !== '') {
-            currentKeyword = keyword;
-            currentPage = 1; // 重置到第一页
-            currentSubject = '全部'; // 重置分类筛选
-            
-            // 更新分类筛选标签的活跃状态
-            if (subjectFilterContainer) {
-                const pills = subjectFilterContainer.querySelectorAll('.tag-pill');
-                pills.forEach(pill => {
-                    if (pill.dataset.subject === '全部' || pill.dataset.tag === '全部') {
-                        pill.classList.add('active');
-                    } else {
-                        pill.classList.remove('active');
-                    }
-                });
-            }
-            
-            // 加载搜索结果
-            loadArticlesData(true);
-        }
+
+    function getArticleKey(article) {
+        if (article.doi?.trim()) return `doi:${article.doi.trim().toLowerCase()}`;
+        if (article.url?.trim()) return `url:${article.url.trim()}`;
+        const title = (article.titleCn || article.title || "").trim().toLowerCase();
+        return title ? `title:${title}` : "";
     }
-    
-    // 加载文章数据
-    function loadArticlesData(isSearch = false) {
-        showLoading(true);
-        
-        // 构建查询参数
-        let url = '/articles';
-        const params = new URLSearchParams();
-        
-        if (currentSubject && currentSubject !== '全部') {
-            params.append('subject', currentSubject);
-        }
-        
-        if (isSearch && currentKeyword) {
-            params.append('keyword', currentKeyword);
-        }
-        
-        // 如果有参数，添加到URL
-        if (params.toString()) {
-            url += '?' + params.toString();
-        }
-        
-        fetch(url)
-            .then(response => response.json())
-            .then(data => {
-                showLoading(false);
-                
-                allArticles = data || [];
-                
-                // 确保文章有正确的日期格式
-                allArticles = allArticles.map(article => {
-                    const publishDate = article.date || article.publishDate || '';
-                    return {
-                        ...article,
-                        publishDate: publishDate,
-                        // 标准化日期格式，用于排序和分组
-                        normalizedDate: standardizeDate(publishDate)
-                    };
-                });
-                
-                // 按日期降序排序（最新的在前）
-                allArticles.sort((a, b) => {
-                    if (!a.normalizedDate) return 1;
-                    if (!b.normalizedDate) return -1;
-                    return new Date(b.normalizedDate) - new Date(a.normalizedDate);
-                });
-                
-                // --- 修改：生成 Subject 筛选器 ---
-                if (!isSearch || !currentKeyword) {
-                    generateSubjectFilters(allArticles);
-                }
-                
-                // 渲染文章
-                renderArticles(currentPage);
-                
-                // 生成分页
-                generatePagination();
-                
-                // 显示搜索结果状态
-                if (isSearch && currentKeyword) {
-                    showMessage(`找到 ${allArticles.length} 条与 "${currentKeyword}" 相关的结果`, 'info');
-                }
+
+    function getArticleSnapshot(article) {
+        return {
+            doi: article.doi || "",
+            url: article.url || "",
+            title: article.title || "",
+            titleCn: article.titleCn || "",
+            journal: article.journal || "",
+            Subject: article.Subject || "",
+            publishDate: article.publishDate || article.date || ""
+        };
+    }
+
+    function loadLibraryState() {
+        if (!isAuthenticated) return;
+        fetch("/api/library/state")
+            .then((response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
             })
-            .catch(error => {
-                console.error('获取数据失败:', error);
-                showLoading(false);
-                showMessage('获取数据失败，请稍后再试或点击"刷新数据"按钮', 'danger');
-            });
-    }
-    
-    // 标准化日期格式函数
-    function standardizeDate(dateStr) {
-        if (!dateStr) return '';
-        
-        // 尝试解析日期
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) {
-            // 如果解析失败，尝试其他格式
-            const formats = [
-                /(\d{4})[/-](\d{1,2})[/-](\d{1,2})/, // YYYY-MM-DD 或 YYYY/MM/DD
-                /(\d{1,2})[/-](\d{1,2})[/-](\d{4})/  // DD-MM-YYYY 或 DD/MM/YYYY
-            ];
-            
-            for (const format of formats) {
-                const match = dateStr.match(format);
-                if (match) {
-                    // 根据格式构造日期
-                    if (format === formats[0]) {
-                        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-                    } else {
-                        return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
-                    }
-                }
-            }
-            return '';
-        }
-        
-        // 返回标准格式 YYYY-MM-DD
-        return date.toISOString().split('T')[0];
-    }
-    
-    // 格式化日期显示
-    function formatDateForDisplay(dateStr) {
-        if (!dateStr) return '未知日期';
-        
-        const normalizedDate = standardizeDate(dateStr);
-        if (!normalizedDate) return dateStr; // 如果无法标准化，返回原始字符串
-        
-        const [year, month, day] = normalizedDate.split('-');
-        return `${year}/${month}/${day}`;
+            .then((data) => {
+                state.favoriteKeys = new Set(data.favoriteKeys || []);
+                syncFavoriteButtons();
+            })
+            .catch((error) => console.error("加载收藏状态失败:", error));
     }
 
-    // --- 修改：生成 Subject 筛选器 ---
-    function generateSubjectFilters(articles) {
-        if (!subjectFilterContainer) return;
-        
-        // 保留"全部"按钮
-        const allSubjectElement = subjectFilterContainer.querySelector('[data-subject="全部"]');
-        subjectFilterContainer.innerHTML = ''; // 清空现有按钮
-        if (allSubjectElement) {
-            subjectFilterContainer.appendChild(allSubjectElement);
-        } else {
-            const allSubjectBtn = document.createElement('div');
-            allSubjectBtn.className = 'tag-pill active'; // 复用样式
-            allSubjectBtn.dataset.subject = '全部';
-            allSubjectBtn.textContent = '全部';
-            subjectFilterContainer.appendChild(allSubjectBtn);
-        }
-        
-        // 提取所有唯一的 Subject
-        const uniqueSubjects = new Set();
-        articles.forEach(article => {
-            if (article.Subject && article.Subject.trim()) { // 检查 Subject 字段
-                uniqueSubjects.add(article.Subject.trim());
-            }
-        });
-        
-        // 创建 Subject 按钮
-        Array.from(uniqueSubjects).sort().forEach(subject => {
-            const subjectElement = document.createElement('div');
-            subjectElement.className = 'tag-pill'; // 复用样式
-            subjectElement.dataset.subject = subject;
-            subjectElement.textContent = subject;
-            subjectFilterContainer.appendChild(subjectElement);
-        });
-        
-        // 添加 Subject 按钮点击事件
-        const subjectPills = subjectFilterContainer.querySelectorAll('.tag-pill');
-        subjectPills.forEach(pill => {
-            pill.addEventListener('click', () => {
-                subjectPills.forEach(p => p.classList.remove('active'));
-                pill.classList.add('active');
-                currentSubject = pill.dataset.subject; // 更新当前 Subject
-                currentPage = 1; // 重置到第一页
-                renderArticles(currentPage);
-                generatePagination();
-            });
-        });
+    function requireLogin() {
+        const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.href = `${loginUrl}?next=${encodeURIComponent(next)}`;
     }
 
-    // --- 修改：根据 Subject 筛选文章 ---
-    function filterArticlesBySubject(articles, subject) {
-        if (!subject || subject === '全部') {
-            return articles; // 返回全部文章
-        }
-        
-        return articles.filter(article => {
-            // 直接比较 Subject 字段
-            return article.Subject && article.Subject.trim() === subject.trim(); 
-        });
-    }
-
-    // 渲染文章列表
-    function renderArticles(page) {
-        if (!articlesList) return;
-        
-        // --- 修改：按 Subject 筛选 ---
-        const filteredArticles = filterArticlesBySubject(allArticles, currentSubject);
-        
-        // 计算分页
-        const start = (page - 1) * articlesPerPage;
-        const end = start + articlesPerPage;
-        const paginatedArticles = filteredArticles.slice(start, end);
-        
-        // 清空容器
-        articlesList.innerHTML = '';
-        
-        // 无结果处理
-        if (paginatedArticles.length === 0) {
-            articlesList.innerHTML = `
-                <div class="no-results">
-                    <p>在 "${currentSubject}" 分类下没有找到相关文章</p>
-                    ${currentSubject !== '全部' ? '<p>请尝试选择其他分类或查看"全部"</p>' : ''}
-                </div>
-            `;
+    function toggleFavorite(article, button) {
+        if (!isAuthenticated) {
+            requireLogin();
             return;
         }
-        
-        // 按日期分组文章
-        const articlesByDate = {};
-        paginatedArticles.forEach(article => {
-            const dateStr = article.normalizedDate || '未知日期';
-            if (!articlesByDate[dateStr]) {
-                articlesByDate[dateStr] = [];
-            }
-            articlesByDate[dateStr].push(article);
-        });
-        
-        // 按日期降序排列日期
-        const sortedDates = Object.keys(articlesByDate).sort((a, b) => {
-            if (a === '未知日期') return 1;
-            if (b === '未知日期') return -1;
-            return new Date(b) - new Date(a);
-        });
-        
-        // 在每个日期组内，按更新时间排序
-        for (const dateStr in articlesByDate) {
-            articlesByDate[dateStr].sort((a, b) => {
-                // 使用 updatedAt 字段作为更新时间，如果不存在则回退到其他时间字段
-                const updateTimeA = a.updatedAt ? new Date(a.updatedAt) : 
-                                  (a.updated ? new Date(a.updated) : new Date(a.normalizedDate));
-                const updateTimeB = b.updatedAt ? new Date(b.updatedAt) : 
-                                  (b.updated ? new Date(b.updated) : new Date(b.normalizedDate));
-                
-                // 降序排列，更新时间晚的排在前面
-                return updateTimeB - updateTimeA;
-            });
+        const articleKey = getArticleKey(article);
+        if (!articleKey) {
+            showMessage("该论文缺少可收藏的标识。", "danger");
+            return;
         }
-        
-        // 生成文章卡片，按日期分组
-        sortedDates.forEach(dateStr => {
-            // 添加日期分隔标题
-            const dateHeader = document.createElement('div');
-            dateHeader.className = 'date-separator';
-            dateHeader.innerHTML = `<h3>${formatDateForDisplay(dateStr)}</h3>`;
-            articlesList.appendChild(dateHeader);
-            
-            // 添加该日期下的所有文章
-            const articlesContainer = document.createElement('div');
-            articlesContainer.className = 'date-articles-group';
-            
-            articlesByDate[dateStr].forEach(article => {
-                // 处理标签 (逻辑不变)
-                let tagsHTML = '';
-                if (article.tags) {
-                    const tagsArray = Array.isArray(article.tags) ? article.tags : article.tags.split(',');
-                    tagsHTML = tagsArray.map(tag => 
-                        `<span class="paper-tag">${tag.trim()}</span>`
-                    ).join('');
+
+        const favorite = !state.favoriteKeys.has(articleKey);
+        if (button) button.disabled = true;
+        fetch("/api/library/favorite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ favorite, article: getArticleSnapshot(article) })
+        })
+            .then(async (response) => {
+                const data = await response.json();
+                if (response.status === 401) {
+                    requireLogin();
+                    return null;
                 }
-
-                // --- 新增：处理 Subject ---
-                const subjectHTML = article.Subject ? `<span class="paper-subject">分类: ${article.Subject}</span>` : '';
-                
-                // --- 新增：处理期刊信息 ---
-                const journalHTML = article.journal ? `<span class="meta-item journal-badge">${article.journal}</span>` : '';
-                
-                const card = document.createElement('div');
-                card.className = 'paper-card';
-                
-                card.innerHTML = `
-                    <div class="paper-header">
-                        <div class="paper-content">
-                            <h3 class="paper-title">【${article.titleCn || article.title}】</h3>
-                            <p class="paper-cn-title">${article.title}</p>
-                            <div class="paper-meta">
-                                ${journalHTML}
-                                ${article.doi ? `<span class="meta-item doi-badge">DOI: ${article.doi}</span>` : ''}
-                                <!-- 显示 Subject -->
-                                ${subjectHTML ? `<span class="meta-item paper-subject-meta">${subjectHTML}</span>` : ''} 
-                            </div>
-                            <p class="paper-abstract">${article.interpretationCn || article.abstract || '暂无解读或摘要'}</p> 
-                            <div class="paper-footer">
-                                <div class="paper-tags">
-                                    <!-- 显示标签 -->
-                                    ${tagsHTML}
-                                </div>
-                                <div class="paper-actions">
-                                    <a href="${article.url}" class="paper-link" target="_blank">查看原文</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`;
-                
-                articlesContainer.appendChild(card);
+                if (!response.ok) throw new Error(data.message || "收藏操作失败");
+                return data;
+            })
+            .then((data) => {
+                if (!data) return;
+                if (data.favorite) state.favoriteKeys.add(data.articleKey);
+                else state.favoriteKeys.delete(data.articleKey);
+                syncFavoriteButtons(data.articleKey);
+                showMessage(data.favorite ? "已加入收藏。" : "已取消收藏。", "info");
+            })
+            .catch((error) => showMessage(error.message || "收藏操作失败。", "danger"))
+            .finally(() => {
+                if (button) button.disabled = false;
             });
-            
-            articlesList.appendChild(articlesContainer);
+    }
+
+    function syncFavoriteButtons(articleKey = "") {
+        document.querySelectorAll("[data-favorite-key]").forEach((button) => {
+            const key = button.dataset.favoriteKey;
+            if (articleKey && key !== articleKey) return;
+            const favorite = state.favoriteKeys.has(key);
+            button.classList.toggle("favorite-active", favorite);
+            button.classList.toggle("active", favorite);
+            button.setAttribute("aria-pressed", String(favorite));
+            const label = button.querySelector("span");
+            if (label) label.textContent = favorite ? "已收藏" : "收藏";
+            else button.textContent = favorite ? "已收藏" : "收藏论文";
         });
     }
 
-    // 生成分页
-    function generatePagination() {
-        if (!pagination) return;
-        
-        // --- 修改：基于 Subject 筛选结果计算分页 ---
-        const filteredArticles = filterArticlesBySubject(allArticles, currentSubject);
-        const totalPages = Math.ceil(filteredArticles.length / articlesPerPage);
-        
-        pagination.innerHTML = '';
-        
-        // 如果只有一页，不显示分页
-        if (totalPages <= 1) return;
-        
-        // 优化分页显示，只显示部分页码
-        const maxVisiblePages = 5; // 最多显示的页码数量
-        
-        // 添加页码创建函数
-        const createPageItem = (pageNum, isActive = false, text = pageNum) => {
-            const pageItem = document.createElement('div');
-            pageItem.className = `page-item ${isActive ? 'active' : ''}`;
-            pageItem.textContent = text;
-            
-            if (pageNum > 0 && pageNum <= totalPages) {
-                pageItem.addEventListener('click', () => {
-                    currentPage = pageNum;
-                    renderArticles(currentPage);
-                    generatePagination();
-                });
-            } else {
-                pageItem.classList.add('disabled');
-            }
-            
-            return pageItem;
+    function recordArticleRead(article) {
+        if (!isAuthenticated || !getArticleKey(article)) return;
+        fetch("/api/library/read", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ article: getArticleSnapshot(article) })
+        }).catch((error) => console.error("保存阅读记录失败:", error));
+    }
+
+    function restoreStateFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        state.keyword = params.get("q") || "";
+        state.subject = params.get("subject") || "全部";
+        state.journal = params.get("journal") || "全部";
+        state.dateRange = params.get("range") || "all";
+        state.sort = params.get("sort") || "newest";
+        state.page = Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1);
+    }
+
+    function syncControls() {
+        if (elements.searchInput) elements.searchInput.value = state.keyword;
+        if (elements.clearSearchButton) elements.clearSearchButton.hidden = !state.keyword;
+        if (elements.journalFilter) elements.journalFilter.value = state.journal;
+        if (elements.dateFilter) elements.dateFilter.value = state.dateRange;
+        if (elements.sortFilter) elements.sortFilter.value = state.sort;
+
+        elements.subjectFilter?.querySelectorAll(".tag-pill").forEach((button) => {
+            button.classList.toggle("active", button.dataset.subject === state.subject);
+        });
+    }
+
+    function loadArticlesData() {
+        showLoading(true);
+        fetch("/articles")
+            .then((response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then((data) => {
+                state.articles = Array.isArray(data) ? data.map(normalizeArticle) : [];
+                generateSubjectFilters();
+                generateJournalFilters();
+                syncControls();
+                applyState(false);
+            })
+            .catch((error) => {
+                console.error("获取数据失败:", error);
+                state.articles = [];
+                applyState(false);
+                showMessage("暂时无法获取论文数据，请稍后重试。", "danger");
+            })
+            .finally(() => showLoading(false));
+    }
+
+    function normalizeArticle(article, index) {
+        const publishDate = article.date || article.publishDate || "";
+        return {
+            ...article,
+            _id: article.doi || article.url || `article-${index}`,
+            publishDate,
+            normalizedDate: standardizeDate(publishDate),
+            normalizedTags: normalizeTags(article.tags)
         };
-        
-        // 添加首页按钮
-        if (totalPages > maxVisiblePages) {
-            pagination.appendChild(createPageItem(1, currentPage === 1));
-        }
-        
-        // 计算要显示的页码范围
-        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-        
-        // 调整起始页，确保显示完整的页码数
-        if (endPage - startPage + 1 < maxVisiblePages) {
-            startPage = Math.max(1, endPage - maxVisiblePages + 1);
-        }
-        
-        // 如果首页和起始页之间有间隔，添加省略号
-        if (startPage > 2) {
-            pagination.appendChild(createPageItem(0, false, '...'));
-        }
-        
-        // 添加中间的页码
-        for (let i = startPage; i <= endPage; i++) {
-            if (i !== 1 && i !== totalPages) { // 避免重复添加首页和尾页
-                pagination.appendChild(createPageItem(i, i === currentPage));
-            }
-        }
-        
-        // 如果尾页和结束页之间有间隔，添加省略号
-        if (endPage < totalPages - 1) {
-            pagination.appendChild(createPageItem(0, false, '...'));
-        }
-        
-        // 添加尾页按钮
-        if (totalPages > maxVisiblePages) {
-            pagination.appendChild(createPageItem(totalPages, currentPage === totalPages));
-        }
     }
 
-    // 显示文章详情
-    function showArticleDetails(index) {
-        const article = allArticles[index];
-        if (!article || !modal) return;
-        
-        // 设置模态框内容
-        document.getElementById('modalTitle').textContent = article.titleCn || article.title;
-        document.getElementById('modalAuthors').textContent = article.authors || '未知作者';
-        document.getElementById('modalDate').textContent = `发布日期: ${article.date || article.publishDate || '未知日期'}`;
-        document.getElementById('modalAbstract').textContent = article.interpretationCn || article.abstract || '暂无摘要';
-        
-        // DOI
-        const doiElement = document.getElementById('modalDoi');
-        if (doiElement) {
-            if (article.doi) {
-                doiElement.querySelector('span').textContent = article.doi;
-                doiElement.style.display = 'block';
-            } else {
-                doiElement.style.display = 'none';
-            }
+    function standardizeDate(dateString) {
+        if (!dateString) return "";
+        const parsedDate = new Date(dateString);
+        if (!Number.isNaN(parsedDate.getTime())) {
+            return parsedDate.toISOString().split("T")[0];
         }
-        
-        // 数据集链接
-        const datasetsElement = document.getElementById('modalDatasets');
-        if (datasetsElement) {
-            const datasetsList = datasetsElement.querySelector('ul');
-            datasetsList.innerHTML = '';
-            
-            if (article.dataset_links && article.dataset_links.length > 0) {
-                article.dataset_links.forEach(link => {
-                    const li = document.createElement('li');
-                    li.className = 'list-group-item';
-                    const a = document.createElement('a');
-                    a.href = link;
-                    a.textContent = link;
-                    a.target = '_blank';
-                    li.appendChild(a);
-                    datasetsList.appendChild(li);
+
+        const yearFirst = dateString.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+        if (yearFirst) {
+            return `${yearFirst[1]}-${yearFirst[2].padStart(2, "0")}-${yearFirst[3].padStart(2, "0")}`;
+        }
+
+        const dayFirst = dateString.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+        if (dayFirst) {
+            return `${dayFirst[3]}-${dayFirst[2].padStart(2, "0")}-${dayFirst[1].padStart(2, "0")}`;
+        }
+        return "";
+    }
+
+    function getDateParts(dateString) {
+        const normalizedDate = standardizeDate(dateString);
+        if (!normalizedDate) return { primary: "未知", secondary: "日期", full: "未知日期" };
+        const [year, month, day] = normalizedDate.split("-");
+        return {
+            primary: `${month}.${day}`,
+            secondary: year,
+            full: `${year}年${month}月${day}日`
+        };
+    }
+
+    function normalizeTags(tags) {
+        if (Array.isArray(tags)) {
+            return tags.map(String).map((tag) => tag.trim()).filter(Boolean);
+        }
+        if (typeof tags === "string") {
+            return tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+        }
+        return [];
+    }
+
+    function generateSubjectFilters() {
+        if (!elements.subjectFilter) return;
+        const subjects = [...new Set(
+            state.articles.map((article) => article.Subject?.trim()).filter(Boolean)
+        )].sort((first, second) => first.localeCompare(second, "zh-CN"));
+
+        if (state.subject !== "全部" && !subjects.includes(state.subject)) state.subject = "全部";
+        elements.subjectFilter.replaceChildren();
+
+        ["全部", ...subjects].forEach((subject) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `tag-pill${subject === state.subject ? " active" : ""}`;
+            button.dataset.subject = subject;
+            button.textContent = subject;
+            button.addEventListener("click", () => {
+                state.subject = subject;
+                state.page = 1;
+                elements.subjectFilter.querySelectorAll(".tag-pill").forEach((pill) => {
+                    pill.classList.toggle("active", pill.dataset.subject === subject);
                 });
-                datasetsElement.style.display = 'block';
-            } else {
-                datasetsList.innerHTML = '<li class="list-group-item">暂无相关数据集链接</li>';
-                datasetsElement.style.display = 'block';
+                applyState();
+            });
+            elements.subjectFilter.appendChild(button);
+        });
+    }
+
+    function generateJournalFilters() {
+        if (!elements.journalFilter) return;
+        const journals = [...new Set(
+            state.articles.map((article) => article.journal?.trim()).filter(Boolean)
+        )].sort((first, second) => first.localeCompare(second, "en"));
+
+        if (state.journal !== "全部" && !journals.includes(state.journal)) state.journal = "全部";
+        elements.journalFilter.replaceChildren(new Option("全部期刊", "全部"));
+        journals.forEach((journal) => elements.journalFilter.add(new Option(journal, journal)));
+    }
+
+    function applySearch(showStatus) {
+        const keyword = elements.searchInput?.value.trim() || "";
+        if (keyword === state.keyword) return;
+        state.keyword = keyword;
+        state.page = 1;
+        applyState();
+        if (showStatus && keyword) {
+            showMessage(`正在当前论文库中搜索“${keyword}”`, "info");
+        }
+    }
+
+    function applyState(updateUrl = true) {
+        const filteredArticles = getFilteredArticles();
+        const totalPages = Math.max(1, Math.ceil(filteredArticles.length / articlesPerPage));
+        state.page = Math.min(state.page, totalPages);
+        renderArticles(filteredArticles);
+        generatePagination(filteredArticles.length);
+        renderActiveFilters();
+        updateResultSummary(filteredArticles.length);
+        syncControls();
+        if (updateUrl) updateUrlState();
+    }
+
+    function getFilteredArticles() {
+        const keyword = state.keyword.toLocaleLowerCase("zh-CN");
+        const cutoffDate = getCutoffDate(state.dateRange);
+
+        const filtered = state.articles.filter((article) => {
+            if (state.subject !== "全部" && article.Subject?.trim() !== state.subject) return false;
+            if (state.journal !== "全部" && article.journal?.trim() !== state.journal) return false;
+            if (cutoffDate && (!article.normalizedDate || new Date(article.normalizedDate) < cutoffDate)) return false;
+
+            if (keyword) {
+                const searchableText = [
+                    article.title,
+                    article.titleCn,
+                    article.abstract,
+                    article.interpretationCn,
+                    article.authors,
+                    article.Subject,
+                    article.journal,
+                    article.doi,
+                    ...article.normalizedTags
+                ].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN");
+                if (!searchableText.includes(keyword)) return false;
             }
-        }
-        
-        // 原文链接
-        const modalLink = document.getElementById('modalLink');
-        if (modalLink) {
-            modalLink.href = article.url || '#';
-        }
-        
-        // 显示模态框
-        modal.style.display = 'block';
+            return true;
+        });
+
+        return filtered.sort((first, second) => {
+            if (state.sort === "oldest") return compareDates(first, second);
+            if (state.sort === "title") {
+                const firstTitle = first.titleCn || first.title || "";
+                const secondTitle = second.titleCn || second.title || "";
+                return firstTitle.localeCompare(secondTitle, "zh-CN");
+            }
+            return compareDates(second, first);
+        });
     }
 
-    // 关闭模态框
+    function compareDates(first, second) {
+        if (!first.normalizedDate) return 1;
+        if (!second.normalizedDate) return -1;
+        return new Date(first.normalizedDate) - new Date(second.normalizedDate);
+    }
+
+    function getCutoffDate(range) {
+        if (range === "all") return null;
+        const days = Number.parseInt(range, 10);
+        if (!days) return null;
+        const cutoff = new Date();
+        cutoff.setHours(0, 0, 0, 0);
+        cutoff.setDate(cutoff.getDate() - days);
+        return cutoff;
+    }
+
+    function renderArticles(filteredArticles) {
+        if (!elements.articlesList) return;
+        const start = (state.page - 1) * articlesPerPage;
+        const pageArticles = filteredArticles.slice(start, start + articlesPerPage);
+        elements.articlesList.replaceChildren();
+
+        if (!pageArticles.length) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "no-results";
+            const title = document.createElement("strong");
+            title.textContent = "没有找到匹配的论文";
+            const description = document.createElement("p");
+            description.textContent = "尝试减少筛选条件、调整发布时间或更换搜索词。";
+            const resetButton = document.createElement("button");
+            resetButton.type = "button";
+            resetButton.className = "button button-secondary empty-reset-button";
+            resetButton.textContent = "清除全部条件";
+            resetButton.addEventListener("click", resetFilters);
+            emptyState.append(title, description, resetButton);
+            elements.articlesList.appendChild(emptyState);
+            return;
+        }
+
+        if (state.sort === "title") {
+            const titleGroup = document.createElement("section");
+            titleGroup.className = "date-group";
+            const titleSeparator = document.createElement("div");
+            titleSeparator.className = "date-separator";
+            const label = document.createElement("time");
+            const primary = document.createElement("strong");
+            primary.textContent = "A-Z";
+            const secondary = document.createElement("span");
+            secondary.textContent = "标题";
+            label.append(primary, secondary);
+            titleSeparator.appendChild(label);
+            const group = document.createElement("div");
+            group.className = "date-articles-group";
+            pageArticles.forEach((article) => group.appendChild(createArticleCard(article)));
+            titleGroup.append(titleSeparator, group);
+            elements.articlesList.appendChild(titleGroup);
+            return;
+        }
+
+        const articlesByDate = pageArticles.reduce((groups, article) => {
+            const dateKey = article.normalizedDate || "未知日期";
+            groups[dateKey] = groups[dateKey] || [];
+            groups[dateKey].push(article);
+            return groups;
+        }, {});
+
+        const dateKeys = Object.keys(articlesByDate);
+        if (state.sort === "oldest") {
+            dateKeys.sort((first, second) => new Date(first) - new Date(second));
+        } else {
+            dateKeys.sort((first, second) => new Date(second) - new Date(first));
+        }
+
+        dateKeys.forEach((dateKey) => {
+            const dateGroup = document.createElement("section");
+            dateGroup.className = "date-group";
+            const dateSeparator = document.createElement("div");
+            dateSeparator.className = "date-separator";
+            const dateParts = getDateParts(dateKey);
+            const time = document.createElement("time");
+            time.dateTime = dateKey === "未知日期" ? "" : dateKey;
+            const primary = document.createElement("strong");
+            primary.textContent = dateParts.primary;
+            const secondary = document.createElement("span");
+            secondary.textContent = dateParts.secondary;
+            time.append(primary, secondary);
+            dateSeparator.appendChild(time);
+
+            const group = document.createElement("div");
+            group.className = "date-articles-group";
+            articlesByDate[dateKey].forEach((article) => group.appendChild(createArticleCard(article)));
+            dateGroup.append(dateSeparator, group);
+            elements.articlesList.appendChild(dateGroup);
+        });
+    }
+
+    function createArticleCard(article) {
+        const card = document.createElement("article");
+        card.className = "paper-card";
+
+        const top = document.createElement("div");
+        top.className = "paper-card-top";
+        const source = document.createElement("div");
+        source.className = "paper-source";
+        if (article.journal) source.appendChild(createBadge(article.journal, "journal-badge"));
+        if (article.Subject) source.appendChild(createBadge(article.Subject, "subject-badge"));
+        const date = document.createElement("time");
+        date.className = "paper-date";
+        date.dateTime = article.normalizedDate;
+        date.textContent = getDateParts(article.publishDate).full;
+        top.append(source, date);
+
+        const title = document.createElement("h3");
+        title.className = "paper-title";
+        const titleButton = document.createElement("button");
+        titleButton.type = "button";
+        titleButton.textContent = article.titleCn || article.title || "未命名论文";
+        titleButton.addEventListener("click", () => showArticleDetails(article, titleButton));
+        title.appendChild(titleButton);
+
+        const originalTitle = document.createElement("p");
+        originalTitle.className = "paper-original-title";
+        originalTitle.textContent = article.title || "";
+
+        const abstractWrap = document.createElement("div");
+        abstractWrap.className = "paper-abstract-wrap";
+        const abstractMark = document.createElement("span");
+        abstractMark.className = "abstract-mark";
+        abstractMark.textContent = "“";
+        const abstract = document.createElement("p");
+        abstract.className = "paper-abstract";
+        abstract.textContent = article.interpretationCn || article.abstract || "暂无中文解读或摘要。";
+        const expandButton = document.createElement("button");
+        expandButton.type = "button";
+        expandButton.className = "abstract-toggle";
+        expandButton.textContent = "展开解读";
+        expandButton.addEventListener("click", () => {
+            const expanded = abstractWrap.classList.toggle("expanded");
+            expandButton.textContent = expanded ? "收起解读" : "展开解读";
+            expandButton.setAttribute("aria-expanded", String(expanded));
+        });
+        abstractWrap.append(abstractMark, abstract, expandButton);
+
+        const footer = document.createElement("div");
+        footer.className = "paper-footer";
+        const metaFooter = document.createElement("div");
+        metaFooter.className = "paper-meta-footer";
+        const tags = document.createElement("div");
+        tags.className = "paper-tags";
+        article.normalizedTags.slice(0, 5).forEach((tag) => {
+            const tagElement = document.createElement("button");
+            tagElement.type = "button";
+            tagElement.className = "paper-tag";
+            tagElement.textContent = tag;
+            tagElement.addEventListener("click", () => {
+                elements.searchInput.value = tag;
+                state.keyword = tag;
+                state.page = 1;
+                applyState();
+            });
+            tags.appendChild(tagElement);
+        });
+        metaFooter.appendChild(tags);
+
+        if (article.doi) {
+            const doi = document.createElement("span");
+            doi.className = "paper-doi";
+            doi.textContent = `DOI ${article.doi}`;
+            doi.title = article.doi;
+            metaFooter.appendChild(doi);
+        }
+
+        const actions = document.createElement("div");
+        actions.className = "paper-actions";
+        const favoriteButton = createFavoriteButton(article);
+        const detailButton = createActionButton("查看详情");
+        detailButton.addEventListener("click", () => showArticleDetails(article, detailButton));
+        actions.append(favoriteButton, detailButton);
+        if (article.url) actions.appendChild(createActionLink(article.url, "查看原文"));
+
+        footer.append(metaFooter, actions);
+        card.append(top, title, originalTitle, abstractWrap, footer);
+        return card;
+    }
+
+    function createFavoriteButton(article) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "paper-action";
+        button.dataset.favoriteKey = getArticleKey(article);
+        button.innerHTML = `
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M10 16.5 4.4 11A3.8 3.8 0 0 1 9.8 5.6L10 5.8l.2-.2a3.8 3.8 0 0 1 5.4 5.4Z"></path>
+            </svg>
+            <span>收藏</span>
+        `;
+        button.addEventListener("click", () => toggleFavorite(article, button));
+        const favorite = state.favoriteKeys.has(button.dataset.favoriteKey);
+        button.classList.toggle("favorite-active", favorite);
+        button.setAttribute("aria-pressed", String(favorite));
+        button.querySelector("span").textContent = favorite ? "已收藏" : "收藏";
+        return button;
+    }
+
+    function createBadge(text, className) {
+        const badge = document.createElement("span");
+        badge.className = `meta-badge ${className}`;
+        badge.textContent = text;
+        return badge;
+    }
+
+    function createActionButton(label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "paper-action";
+        button.innerHTML = `
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 10s2.5-4 7-4 7 4 7 4-2.5 4-7 4-7-4-7-4Z"></path>
+                <circle cx="10" cy="10" r="1.8"></circle>
+            </svg>
+            <span>${label}</span>
+        `;
+        return button;
+    }
+
+    function createActionLink(url, label) {
+        const link = document.createElement("a");
+        link.className = "paper-action paper-action-primary";
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.innerHTML = `
+            <span>${label}</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M7.5 5.5h7v7M14 6l-8.5 8.5"></path>
+            </svg>
+        `;
+        return link;
+    }
+
+    function renderActiveFilters() {
+        if (!elements.activeFilters) return;
+        elements.activeFilters.replaceChildren();
+        const filters = [];
+        if (state.keyword) filters.push({ label: `搜索：${state.keyword}`, reset: () => { state.keyword = ""; } });
+        if (state.subject !== "全部") filters.push({ label: state.subject, reset: () => { state.subject = "全部"; } });
+        if (state.journal !== "全部") filters.push({ label: state.journal, reset: () => { state.journal = "全部"; } });
+        if (state.dateRange !== "all") {
+            const label = elements.dateFilter?.selectedOptions[0]?.textContent || "发布时间";
+            filters.push({ label, reset: () => { state.dateRange = "all"; } });
+        }
+
+        filters.forEach((filter) => {
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "active-filter-chip";
+            chip.textContent = `${filter.label} ×`;
+            chip.addEventListener("click", () => {
+                filter.reset();
+                state.page = 1;
+                applyState();
+            });
+            elements.activeFilters.appendChild(chip);
+        });
+        elements.activeFilters.classList.toggle("visible", filters.length > 0);
+    }
+
+    function updateResultSummary(count) {
+        if (!elements.resultSummary) return;
+        const start = count ? (state.page - 1) * articlesPerPage + 1 : 0;
+        const end = Math.min(state.page * articlesPerPage, count);
+        elements.resultSummary.textContent = count
+            ? `共 ${count} 篇 · 当前显示 ${start}-${end}`
+            : "没有匹配结果";
+    }
+
+    function generatePagination(totalArticles) {
+        if (!elements.pagination) return;
+        const totalPages = Math.ceil(totalArticles / articlesPerPage);
+        elements.pagination.replaceChildren();
+        if (totalPages <= 1) return;
+
+        const addPageButton = (label, page, options = {}) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `page-item${options.active ? " active" : ""}${options.disabled ? " disabled" : ""}`;
+            button.textContent = label;
+            button.disabled = Boolean(options.disabled);
+            if (!options.disabled) {
+                button.addEventListener("click", () => {
+                    state.page = page;
+                    applyState();
+                    document.getElementById("papers")?.scrollIntoView({ behavior: "smooth" });
+                });
+            }
+            elements.pagination.appendChild(button);
+        };
+
+        addPageButton("上一页", state.page - 1, { disabled: state.page === 1 });
+        const startPage = Math.max(1, Math.min(state.page - 2, totalPages - 4));
+        const endPage = Math.min(totalPages, startPage + 4);
+        for (let page = startPage; page <= endPage; page += 1) {
+            addPageButton(String(page), page, { active: page === state.page });
+        }
+        addPageButton("下一页", state.page + 1, { disabled: state.page === totalPages });
+    }
+
+    function updateUrlState() {
+        const params = new URLSearchParams();
+        if (state.keyword) params.set("q", state.keyword);
+        if (state.subject !== "全部") params.set("subject", state.subject);
+        if (state.journal !== "全部") params.set("journal", state.journal);
+        if (state.dateRange !== "all") params.set("range", state.dateRange);
+        if (state.sort !== "newest") params.set("sort", state.sort);
+        if (state.page > 1) params.set("page", String(state.page));
+        const query = params.toString();
+        const url = `${window.location.pathname}${query ? `?${query}` : ""}#papers`;
+        window.history.replaceState({}, "", url);
+    }
+
+    function resetFilters() {
+        state.keyword = "";
+        state.subject = "全部";
+        state.journal = "全部";
+        state.dateRange = "all";
+        state.sort = "newest";
+        state.page = 1;
+        applyState();
+    }
+
+    function handleAssistantSubmit(event) {
+        event.preventDefault();
+        const message = elements.researchQuestion?.value.trim() || "";
+        if (message.length < 4) {
+            renderAssistantError("请稍微详细描述你的研究需求。");
+            return;
+        }
+
+        setAssistantLoading(true);
+        fetch("/api/research-assistant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message })
+        })
+            .then(async (response) => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || "请求失败");
+                return data;
+            })
+            .then(renderAssistantResponse)
+            .catch((error) => {
+                console.error("科研数据推荐失败:", error);
+                renderAssistantError(error.message || "暂时无法完成推荐，请稍后重试。");
+            })
+            .finally(() => setAssistantLoading(false));
+    }
+
+    function setAssistantLoading(isLoading) {
+        if (!elements.askAssistantButton) return;
+        elements.askAssistantButton.disabled = isLoading;
+        const label = elements.askAssistantButton.querySelector("span");
+        if (label) label.textContent = isLoading ? "正在分析..." : "查找数据";
+    }
+
+    function renderAssistantResponse(data) {
+        if (!elements.assistantResponse) return;
+        elements.assistantResponse.replaceChildren();
+        elements.assistantResponse.classList.add("visible");
+
+        const answer = document.createElement("div");
+        answer.className = "assistant-answer";
+        const avatar = document.createElement("span");
+        avatar.className = "message-avatar";
+        avatar.textContent = "AI";
+        const answerText = document.createElement("div");
+        answerText.className = "assistant-answer-text";
+        const paragraph = document.createElement("p");
+        paragraph.textContent = data.answer || "根据你的研究需求，推荐以下数据论文。";
+        const mode = document.createElement("span");
+        mode.className = "assistant-mode";
+        mode.textContent = data.mode === "ai" ? "由大模型结合论文库生成" : "当前使用本地论文库匹配";
+        answerText.append(paragraph, mode);
+        answer.append(avatar, answerText);
+        elements.assistantResponse.appendChild(answer);
+
+        const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
+        if (!recommendations.length) return;
+
+        const grid = document.createElement("div");
+        grid.className = "assistant-recommendations";
+        recommendations.forEach((recommendation, index) => {
+            const article = normalizeArticle(recommendation, index);
+            const card = document.createElement("article");
+            card.className = "assistant-result-card";
+            const meta = document.createElement("div");
+            meta.className = "assistant-result-meta";
+            if (article.journal) meta.appendChild(createBadge(article.journal, "journal-badge"));
+            if (article.Subject) meta.appendChild(createBadge(article.Subject, "subject-badge"));
+            const title = document.createElement("h3");
+            title.textContent = article.titleCn || article.title || "未命名数据论文";
+            const reason = document.createElement("p");
+            reason.className = "assistant-result-reason";
+            reason.textContent = article.reason || "与当前研究需求具有较高相关性。";
+            const actions = document.createElement("div");
+            actions.className = "assistant-result-actions";
+            const detailButton = document.createElement("button");
+            detailButton.type = "button";
+            detailButton.textContent = "查看详情";
+            detailButton.addEventListener("click", () => showArticleDetails(article, detailButton));
+            actions.appendChild(detailButton);
+            if (article.url) {
+                const link = document.createElement("a");
+                link.href = article.url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = "打开原文";
+                actions.appendChild(link);
+            }
+            card.append(meta, title, reason, actions);
+            grid.appendChild(card);
+        });
+        elements.assistantResponse.appendChild(grid);
+    }
+
+    function renderAssistantError(message) {
+        if (!elements.assistantResponse) return;
+        elements.assistantResponse.replaceChildren();
+        elements.assistantResponse.classList.add("visible");
+        const error = document.createElement("div");
+        error.className = "assistant-error";
+        error.textContent = message;
+        elements.assistantResponse.appendChild(error);
+    }
+
+    function showArticleDetails(article, trigger) {
+        if (!elements.modal) return;
+        activeModalArticle = article;
+        lastFocusedElement = trigger || document.activeElement;
+        document.getElementById("modalTitle").textContent = article.titleCn || article.title || "论文详情";
+        document.getElementById("modalAuthors").textContent = article.authors || "作者信息暂缺";
+        document.getElementById("modalDate").textContent = `发布日期：${getDateParts(article.publishDate).full}`;
+        document.getElementById("modalAbstract").textContent =
+            article.interpretationCn || article.abstract || "暂无中文解读或摘要。";
+
+        const doiElement = document.getElementById("modalDoi");
+        if (article.doi) {
+            doiElement.style.display = "";
+            doiElement.querySelector("span").textContent = article.doi;
+        } else {
+            doiElement.style.display = "none";
+        }
+
+        const datasetsList = document.querySelector("#modalDatasets .datasets-list");
+        datasetsList.replaceChildren();
+        const datasetLinks = Array.isArray(article.dataset_links) ? article.dataset_links : [];
+        if (datasetLinks.length) {
+            datasetLinks.forEach((url) => {
+                const item = document.createElement("li");
+                const link = document.createElement("a");
+                link.href = url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.textContent = url;
+                item.appendChild(link);
+                datasetsList.appendChild(item);
+            });
+        } else {
+            const item = document.createElement("li");
+            item.textContent = "暂无相关数据集链接";
+            datasetsList.appendChild(item);
+        }
+
+        const modalLink = document.getElementById("modalLink");
+        modalLink.href = article.url || "#";
+        modalLink.style.display = article.url ? "inline-flex" : "none";
+        if (elements.modalFavoriteButton) {
+            elements.modalFavoriteButton.dataset.favoriteKey = getArticleKey(article);
+            syncFavoriteButtons(getArticleKey(article));
+        }
+        elements.modal.classList.add("visible");
+        document.body.classList.add("modal-open");
+        elements.closeModalButton?.focus();
+        recordArticleRead(article);
+    }
+
     function closeModal() {
-        if (modal) {
-            modal.style.display = 'none';
+        elements.modal?.classList.remove("visible");
+        document.body.classList.remove("modal-open");
+        activeModalArticle = null;
+        lastFocusedElement?.focus();
+    }
+
+    function showLoading(isLoading) {
+        if (elements.loadingOverlay) {
+            elements.loadingOverlay.style.display = isLoading ? "flex" : "none";
         }
     }
 
-    // 显示加载状态
-    function showLoading(show) {
-        if (loadingOverlay) {
-            loadingOverlay.style.display = show ? 'flex' : 'none';
-        }
-    }
-
-    // 显示消息
-    function showMessage(message, type = 'info') {
-        if (!statusMessage) return;
-        
-        statusMessage.textContent = message;
-        statusMessage.className = `alert alert-${type}`;
-        statusMessage.style.display = 'block';
-        
-        // 3秒后自动隐藏
-        setTimeout(() => {
-            statusMessage.style.display = 'none';
+    function showMessage(message, type = "info") {
+        if (!elements.statusMessage) return;
+        elements.statusMessage.textContent = message;
+        elements.statusMessage.className = `alert alert-${type}`;
+        elements.statusMessage.style.display = "block";
+        window.setTimeout(() => {
+            elements.statusMessage.style.display = "none";
         }, 3000);
     }
 });

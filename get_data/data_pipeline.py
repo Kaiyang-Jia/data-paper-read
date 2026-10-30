@@ -5,7 +5,7 @@
 
 整合数据爬取、处理和服务的完整流程，提供一体化的数据更新与维护功能。
 主要功能：
-1. 从多个期刊RSS源爬取最新科研数据论文
+1. 从期刊 RSS 和 Crossref API 获取最新科研数据论文
 2. 使用NLP处理翻译标题、生成解读及标签
 3. 直接将处理好的数据保存到数据库
 
@@ -43,11 +43,13 @@ except ImportError:
 # 尝试导入本地模块 (使用相对导入)
 try:
     from .crawler import RSSCrawler
+    from .crossref_crawler import CrossrefCrawler
     from .process import NLPProcessor
 except ImportError as e:
     logger.error(f"导入本地模块失败: {e}")
     try:
         from crawler import RSSCrawler
+        from crossref_crawler import CrossrefCrawler
         from process import NLPProcessor
     except ImportError as e2:
         logger.error(f"尝试导入本地模块失败 (绝对路径): {e2}")
@@ -66,14 +68,23 @@ def run_pipeline(full_update=False):
     # 确保数据库表已初始化
     DBHelper.initialize_tables()
     
-    # 步骤1: 爬取最新数据并保存到数据库
-    logger.info("步骤1: 爬取最新数据并保存到数据库")
+    # 步骤1: RSS 优先获取最新摘要，再由 Crossref 补齐历史和遗漏记录
+    logger.info("步骤1: 从 RSS 和 Crossref 获取论文元数据")
     try:
-        crawler = RSSCrawler()
-        articles = crawler.crawl()
+        rss_crawler = RSSCrawler()
+        rss_crawler.crawl()
+
+        crossref_crawler = CrossrefCrawler()
+        try:
+            crossref_crawler.crawl(full_update=full_update)
+        except Exception as e:
+            # Crossref 是补充源；失败时仍保留 RSS 已获取的数据。
+            logger.error(f"Crossref 补充获取失败，继续处理 RSS 数据: {e}")
         
         # 检查是否有新数据
-        has_new_articles = crawler.last_added_count > 0
+        has_new_articles = (
+            rss_crawler.last_added_count + crossref_crawler.last_added_count
+        ) > 0
         
         # 检查是否有未处理的原始论文
         unprocessed_count = 0

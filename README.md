@@ -1,136 +1,126 @@
-# 科研数据论文阅读器
+<div align="center">
 
-一个帮助您**用中文追踪科学数据前沿**的Web应用程序。自动获取、处理和展示来自知名期刊（主要是Nature Scientific Data）最新发表的科研数据论文，通过AI生成中文翻译和解读，让您轻松了解国际前沿科研数据成果。
+# DataPaper
 
-![科研数据论文阅读器](https://img.shields.io/badge/%E7%A7%91%E7%A0%94%E6%95%B0%E6%8D%AE-%E8%AE%BA%E6%96%87%E9%98%85%E8%AF%BB%E5%99%A8-brightgreen)
+**从研究问题出发，找到值得进一步核验的数据论文。**
 
-## 🌟 功能特点
+发现论文 · 理解来源 · 比较候选 · 沉淀研究清单
 
-- 🔄 **自动更新数据**：从Nature Scientific Data和ESSD的RSS源爬取最新数据论文
-- 🤖 **AI翻译与解读**：使用DeepSeek AI自动翻译标题、生成中文解读摘要和标签
-- 📊 **智能学科分类**：自动为论文分配学科类别，便于筛选查找
-- 📱 **友好用户界面**：移动端友好的响应式界面设计
-- 🔍 **按学科浏览**：点击顶部学科分类按钮，快速筛选感兴趣的研究领域
-- 🔗 **原文链接**：提供直达原始论文页面的链接
-- 🗃️ **数据持久化**：支持MySQL数据库存储，方便数据管理和检索
+[快速开始](#-快速开始) · [功能介绍](#-能做什么) · [数据与能力边界](#-数据与能力边界) · [开发与测试](#-开发与测试)
 
-## 📋 系统架构
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-2D765D)
 
-### 技术栈
+</div>
 
-- **后端**：Python + Flask
-- **数据处理**：
-  - 爬虫：`feedparser`, `beautifulsoup4`
-  - NLP处理：`openai`（用于DeepSeek API）
-  - 数据存储：MySQL/CSV/JSON
-- **前端**：HTML5 + CSS3 + 原生JavaScript
+---
 
-### 主要组件
+研究数据往往散落在论文、仓库和补充材料中。DataPaper 将数据论文整理为可检索的中文阅读卡片，帮助研究者从一个问题出发发现候选、回到原文核对，再把有价值的线索保存下来。
 
+![DataPaper 工作台界面示意](docs/images/workspace-preview.png)
+
+<p align="center"><sub>工作台界面示意；论文数量与日期以实际运行时的数据为准。</sub></p>
+
+## ✨ 能做什么
+
+| 功能 | 你可以做什么 |
+| --- | --- |
+| 📚 **发现数据论文** | 按中英文关键词、学科、期刊和年份筛选；浏览列表按页加载。 |
+| 🔎 **描述研究问题** | 将自然语言需求交给助手，结合关键词与可选的向量检索寻找候选论文。 |
+| 🧾 **回到来源核验** | 查看标题、摘要、DOI 与原文链接，区分来源信息和模型整理内容。 |
+| 🗂️ **建立研究清单** | 收藏论文、记录笔记、比较候选，并导出 Markdown。 |
+| 👤 **跨设备使用** | 登录账户后保存收藏、笔记和最近阅读；访客清单保存在当前浏览器。 |
+| 📱 **小程序** | 提供移动端论文发现与本地清单。详见 [小程序说明](miniprogram/README.md)。 |
+
+> DataPaper 帮助发现和整理候选，不代替对原文、数据文件、使用许可及研究适用性的核验。
+
+## 🚀 快速开始
+
+### 环境要求
+
+- Python 3.11 或更高版本
+- Node.js 22.13 或更高版本与 npm
+- Windows 用户可直接使用项目提供的启动脚本
+
+### 1. 获取项目并安装依赖
+
+```bash
+git clone https://github.com/Kaiyang-Jia/data-paper-read.git
+cd data-paper-read
+python -m venv .venv
 ```
-data-paper-read/
-├── app.py                      # Flask应用主文件
-├── get_data/                   # 数据获取与处理模块
-│   ├── crawler.py              # 期刊RSS爬虫
-│   ├── abstract_fetcher.py     # 摘要获取工具
-│   ├── process.py              # NLP处理（AI翻译与解读）
-│   ├── data_pipeline.py        # 数据处理流水线
-│   ├── db_helper.py            # 数据库操作封装
-│   └── db_config.py            # 数据库配置
-├── src/templates/              # Flask页面模板
-│   ├── index.html              # 主页模板
-│   └── feedback.html           # 反馈页面模板
-└── static/                     # 静态资源
-    ├── css/style.css           # 样式表
-    ├── js/script.js            # 前端交互脚本
-    └── icons/                  # 网站图标
+
+激活虚拟环境：Windows PowerShell 使用 `.\.venv\Scripts\Activate.ps1`；macOS / Linux 使用 `source .venv/bin/activate`。然后运行：
+
+```bash
+pip install -r requirements.txt
+cd site
+npm ci
+cd ..
 ```
 
-## 🚀 如何使用
+### 2. 启动工作台
 
-### 安装配置
+```bash
+python run_workspace.py
+```
 
-1. **安装依赖**：
-   ```bash
-   pip install -r requirements.txt
-   ```
+打开 **http://127.0.0.1:3000/**。Python API 默认运行在 `127.0.0.1:5000`；保持启动窗口打开。Windows 也可以双击 `启动网页.bat`，关闭时双击 `结束网页.bat`。
 
-2. **配置环境变量**：
-   在使用前，请设置环境变量`DEEPSEEK_API_KEY`为您的DeepSeek API密钥。
+项目自带论文快照。首次运行无需配置模型密钥即可浏览；论文目录接口需要本地 Python 后端运行。启动失败时可检查 `.runtime/api.log` 和 `.runtime/web.log`。
 
-   ```bash
-   # Windows
-   set DEEPSEEK_API_KEY=your_api_key_here
-   
-   # Linux/macOS
-   export DEEPSEEK_API_KEY=your_api_key_here
-   ```
+### 3. 按需配置模型
 
-### 启动应用
+将 `.env.example` 复制为根目录的 `.env`，按需填写：
 
-1. **更新数据**（首次运行或需要刷新数据时）：
-   ```bash
-   python get_data/data_pipeline.py
-   ```
+| 配置项 | 用途 |
+| --- | --- |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | 中文论文卡片加工，以及启用时的推荐理由生成。 |
+| `SILICONFLOW_API_KEY` / `EMBEDDING_MODEL` | 为论文和查询生成向量；当前实现支持硅基流动的 `BAAI/bge-m3`。 |
+| `FAISS_INDEX_DIR` | 指向已构建的本地 FAISS 索引。仅填写密钥不会自动生成索引。 |
+| `FLASK_SECRET_KEY` | 用于账户会话签名；正式部署应设置固定随机值。 |
+| `USE_LOCAL_USER_DB` / `LOCAL_USER_DB_PATH` | 选择本地账户数据库及其存储位置。 |
+| `SESSION_COOKIE_SECURE` | HTTPS 部署时设为 `true`；本地 HTTP 调试时保持 `false`。 |
 
-2. **启动Web服务**：
-   ```bash
-   python app.py
-   ```
+密钥只保存在服务端或本机，不应提交到 GitHub。模型服务可能有调用限制或费用，请以服务商和账户的实际情况为准。
 
-3. **访问应用**：
-   在浏览器中访问 `http://127.0.0.1:5000`
+## 🧭 数据与能力边界
 
-   > **注意**：必须通过Flask服务器提供的地址访问，不要直接打开HTML文件。
+- 当前目录以数据论文为入口；论文发表日期不等同于数据覆盖年份，论文相关也不代表数据满足研究条件。
+- 中文标题、简介和标签可能由模型生成，应对照原文；缺少来源或无法判断的条件仍需人工核验。
+- “研究问题”可使用后端的关键词与向量混合检索；未配置向量服务或索引时会回退。浏览页的关键词筛选与语义检索是不同功能。
+- 仓库内快照用于启动与复现，不等同于线上实时目录。服务器上的新论文、账户资料和索引不会自动写回本仓库。
+- 定时更新需要服务器另行配置。增量更新脚本见 [`deploy/scheduled_update.py`](deploy/scheduled_update.py)，不会因为访问网页而自动触发采集。
+- 微信小程序的正式网络访问需要按微信平台要求配置服务地址及合法域名，不能直接把本机地址当成线上地址。
 
-## 💡 使用指南
+## 🧩 项目结构
 
-- **浏览论文**：打开应用主页即可查看最新的论文列表，按发布日期倒序排列
-- **按学科筛选**：点击页面上方的学科分类按钮，快速定位感兴趣的研究领域
-- **查看详情**：点击论文卡片可查看更多信息（注：此功能正在开发中）
-- **阅读原文**：点击"查看原文"链接跳转到期刊官网阅读完整论文
+```text
+DataPaper/
+├── site/             网页工作台、页面组件与同源 API 代理
+├── app.py            Flask API、账户接口与研究问题检索
+├── research/         论文目录、来源补全、中文加工与账户逻辑
+├── get_data/         采集、处理、数据库与 FAISS 索引
+├── miniprogram/      微信小程序
+├── deploy/           服务器更新脚本与部署说明
+├── tests/            Python 测试
+└── run_workspace.py  本地网页和 API 启动器
+```
 
-## 📚 预设学科分类
+## 🛠️ 开发与测试
 
-系统支持以下学科分类，自动对论文进行归类：
+```bash
+python -m unittest discover -s tests -v
+cd site
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
 
-- **生物技术** (Biotechnology)
-- **气候科学** (Climate Science)
-- **计算生物学与生物信息学** (Computational Biology and Bioinformatics)
-- **疾病** (Diseases)
-- **生态学** (Ecology)
-- **工程学** (Engineering)
-- **环境科学** (Environmental Science)
-- **环境社会科学** (Environmental Social Sciences)
-- **遗传学** (Genetics)
-- **医疗保健** (Health Care)
-- **水文学** (Hydrology)
-- **数学与计算** (Mathematics and Computing)
-- **医学研究** (Medical Research)
-- **微生物学** (Microbiology)
-- **神经科学** (Neuroscience)
-- **海洋科学** (Ocean Science)
-- **植物科学** (Plant Science)
-- **科学界** (Scientific Community)
-- **社会科学** (Social Sciences)
-- **动物学** (Zoology)
-- **其他** (Other)
+更新论文可使用 `python -m research.update_catalog`；完整流程依赖已配置的中文加工与向量服务，可能调用外部 API。运行前请确认模型配置、访问限制和费用。服务器部署与本机开发的区别见 [部署说明](deploy/README.md)。
 
-## ⚠️ 注意事项
+## 📄 License
 
-- AI处理依赖于DeepSeek API，请确保API密钥有效且网络连接正常
-- 爬虫和API调用应遵守相关服务的使用条款，避免过于频繁的请求
-- 数据会自动备份到`get_data/backups/`目录，文件名包含时间戳
-
-## 🔜 开发计划
-
-- [ ] 完善前端：添加搜索框功能
-- [ ] 实现点击卡片查看论文详情功能
-- [ ] 添加数据刷新按钮
-- [ ] 增加更多期刊来源支持
-- [ ] 添加数据可视化功能（研究主题统计图表等）
-- [ ] 优化多维度的筛选组合（如按学科+期刊筛选）
-
-## 📄 许可证
-
-MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+项目代码采用 [MIT License](LICENSE)。论文元数据、摘要及第三方数据的权利和使用条件以各自来源为准。

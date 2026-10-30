@@ -1,0 +1,14 @@
+{
+  "appid": "touristappid",
+  "projectname": "datapaper-miniprogram",
+  "description": "DataPaper 科研数据论文阅读器微信小程序",
+  "miniprogramRoot": "./",
+  "compileType": "miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  }
+}

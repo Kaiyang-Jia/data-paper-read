@@ -1,0 +1,26 @@
+{% extends "auth_base.html" %}
+{% block title %}取消邮件订阅 - DataPaper{% endblock %}
+{% block content %}
+<section class="auth-section">
+    <div class="container unsubscribe-layout">
+        <div class="auth-card unsubscribe-card">
+            <span class="section-kicker">EMAIL SUBSCRIPTION</span>
+            {% if not user %}
+                <h1>退订链接无效</h1>
+                <p>该链接不存在或已经失效，请登录个人中心管理订阅。</p>
+                <a class="button button-primary" href="{{ url_for('login') }}">前往登录</a>
+            {% elif unsubscribed or not user.email_subscribed %}
+                <h1>已取消邮件订阅</h1>
+                <p>{{ user.email }} 将不再收到 DataPaper 的论文推荐邮件。</p>
+                <a class="button button-secondary" href="{{ url_for('index') }}">返回首页</a>
+            {% else %}
+                <h1>取消邮件订阅</h1>
+                <p>确认停止向 {{ user.email }} 发送个性化论文推荐邮件吗？</p>
+                <form method="post">
+                    <button class="button button-primary" type="submit">确认取消订阅</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

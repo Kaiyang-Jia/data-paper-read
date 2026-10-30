@@ -1,0 +1,66 @@
+{% extends "auth_base.html" %}
+{% block title %}注册 - DataPaper{% endblock %}
+{% block content %}
+<section class="auth-section">
+    <div class="container auth-layout">
+        <div class="auth-intro">
+            <span class="section-kicker">CREATE ACCOUNT</span>
+            <h1>建立你的研究兴趣档案</h1>
+            <p>填写研究领域后，DataPaper 会从已有论文库中优先匹配与你方向相关的数据论文。</p>
+            <ul class="auth-benefits">
+                <li>保存长期研究方向</li>
+                <li>获得个性化论文推荐</li>
+                <li>后续可扩展邮件或站内推送</li>
+            </ul>
+        </div>
+        <div class="auth-card">
+            <h2>注册账户</h2>
+            <p class="auth-card-description">当前注册免费，不涉及任何付费信息。</p>
+            {% include "_flash_messages.html" %}
+            <form method="post" class="auth-form">
+                <div class="form-group">
+                    <label for="display_name">昵称</label>
+                    <input id="display_name" name="display_name" type="text" maxlength="100" value="{{ request.form.get('display_name', '') }}" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="email">邮箱</label>
+                    <input id="email" name="email" type="email" maxlength="255" value="{{ request.form.get('email', '') }}" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="research_field">研究领域</label>
+                    <textarea id="research_field" name="research_field" maxlength="500" rows="4" required placeholder="例如：城市气候与遥感，重点关注热岛效应、极端高温和长时间序列卫星数据">{{ request.form.get('research_field', '') }}</textarea>
+                    <small>描述越具体，论文匹配越准确。</small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input id="password" name="password" type="password" minlength="8" required autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm_password">确认密码</label>
+                        <input id="confirm_password" name="confirm_password" type="password" minlength="8" required autocomplete="new-password">
+                    </div>
+                </div>
+                <div class="subscription-opt-in">
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="email_subscribed" {% if request.form.get('email_subscribed') == 'on' %}checked{% endif %}>
+                        <span>
+                            <strong>订阅研究论文邮件</strong>
+                            <small>根据上述研究领域发送相关论文，可随时取消。</small>
+                        </span>
+                    </label>
+                    <label class="select-field subscription-frequency">
+                        <span>发送频率</span>
+                        <select name="email_frequency">
+                            <option value="weekly" {% if request.form.get('email_frequency', 'weekly') == 'weekly' %}selected{% endif %}>每周一次</option>
+                            <option value="daily" {% if request.form.get('email_frequency') == 'daily' %}selected{% endif %}>每日一次</option>
+                        </select>
+                    </label>
+                </div>
+                <button class="button button-primary auth-submit" type="submit">注册并查看推荐</button>
+            </form>
+            <p class="auth-switch">已有账户？<a href="{{ url_for('login') }}">直接登录</a></p>
+        </div>
+    </div>
+</section>
+{% endblock %}

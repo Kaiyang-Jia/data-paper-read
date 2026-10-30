@@ -1,0 +1,15 @@
+<import src="../../templates/papers.wxml" />
+<view class="page">
+  <view class="heading">快速搜索</view>
+  <view class="search-box card">
+    <input value="{{keyword}}" bindinput="onInput" bindconfirm="search" maxlength="100" confirm-type="search" placeholder="标题、关键词或研究主题" />
+    <button bindtap="search">搜索</button>
+    <button wx:if="{{keyword}}" bindtap="clearSearch">清除</button>
+  </view>
+  <view class="status">{{total}} 篇{{keyword ? '匹配论文' : '近期论文'}}</view>
+  <template is="papers" data="{{items: items}}" />
+  <view wx:if="{{loading}}" class="empty">正在查找…</view>
+  <view wx:if="{{error}}" class="empty" bindtap="retry">{{error}}</view>
+  <view wx:if="{{!loading && !error && !items.length}}" class="empty">没有找到论文，试试换个关键词</view>
+  <view wx:if="{{hasMore}}" class="status">上滑加载更多</view>
+</view>

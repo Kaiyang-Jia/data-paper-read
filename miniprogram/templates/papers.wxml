@@ -1,0 +1,14 @@
+<template name="papers">
+  <view wx:for="{{items}}" wx:key="_key" class="card">
+    <view data-index="{{index}}" bindtap="openDetail">
+      <view class="paper-meta"><text>{{item.journal}}</text><text>{{item.publishDate}}</text></view>
+      <view class="paper-title">{{item.displayTitle}}</view>
+      <view wx:if="{{item.displayIntro}}" class="paper-intro">{{item.displayIntro}}</view>
+    </view>
+    <view class="actions">
+      <button class="{{item.favorite ? 'selected' : ''}}" data-index="{{index}}" bindtap="toggleFavorite">{{item.favorite ? '已收藏' : '收藏'}}</button>
+      <button class="{{item.later ? 'selected' : ''}}" data-index="{{index}}" bindtap="toggleLater">{{item.later ? '已加入稍后读' : '稍后读'}}</button>
+      <button open-type="share" data-index="{{index}}">分享</button>
+    </view>
+  </view>
+</template>

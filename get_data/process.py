@@ -89,7 +89,7 @@ class NLPProcessor:
                 return None
             return OpenAI(
                 api_key=api_key,
-                base_url="https://api.deepseek.com"
+                base_url="https://api.deepseek.com", timeout=45.0, max_retries=0,
             )
         except Exception as e:
             logger.error(f"初始化DeepSeek API客户端失败: {e}")
@@ -121,7 +121,8 @@ class NLPProcessor:
         for attempt in range(retries):
             try:
                 response = self.api_client.chat.completions.create(
-                    model="deepseek-chat",
+                    model=os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
+                    extra_body={"thinking": {"type": "disabled"}},
                     messages=[
                         {"role": "system", "content": system_content},
                         {"role": "user", "content": prompt}

@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "common": [
+    {"id":"research_object","label":"研究对象","type":"set","operator":"includes_all","placeholder":"例如：患者、蛋白质、文本、材料"},
+    {"id":"variables","label":"变量或内容","type":"set","operator":"includes_all","placeholder":"用逗号分隔，如：基因表达，细胞类型"},
+    {"id":"data_type","label":"数据类型","type":"set","operator":"one_of","placeholder":"例如：表格、图像、文本、序列、实验记录"},
+    {"id":"collection_method","label":"采集或生成方式","type":"set","operator":"one_of","placeholder":"例如：调查、实验、观测、模拟"},
+    {"id":"format","label":"文件格式","type":"set","operator":"one_of","placeholder":"例如：CSV，DICOM，FASTQ"},
+    {"id":"access","label":"获取方式","type":"set","operator":"one_of","placeholder":"例如：公开下载、申请访问、受控访问"},
+    {"id":"license","label":"许可标识","type":"set","operator":"one_of","placeholder":"例如：CC-BY-4.0；用途权限仍需核对"}
+  ],
+  "domains": [
+    {"id":"medicine","label":"医学与健康","fields":[
+      {"id":"medicine.population","label":"研究人群","type":"set","operator":"includes_all","placeholder":"例如：成人、儿童"},
+      {"id":"medicine.disease","label":"疾病或健康状态","type":"set","operator":"includes_all","placeholder":"例如：糖尿病"},
+      {"id":"medicine.participants","label":"最低参与者人数","type":"number","operator":"at_least","unit":"人","placeholder":"例如：100"},
+      {"id":"medicine.design","label":"研究设计","type":"set","operator":"one_of","placeholder":"例如：队列、病例对照"},
+      {"id":"medicine.measurement","label":"测量方式","type":"set","operator":"one_of","placeholder":"例如：MRI、问卷、血液检测"},
+      {"id":"medicine.followup_months","label":"最低随访时长","type":"number","operator":"at_least","unit":"月","placeholder":"例如：12"}
+    ]},
+    {"id":"biology","label":"生物与组学","fields":[
+      {"id":"biology.species","label":"物种","type":"set","operator":"includes_all","placeholder":"例如：人、小鼠"},
+      {"id":"biology.tissue","label":"组织或细胞类型","type":"set","operator":"includes_all","placeholder":"例如：肝脏、T细胞"},
+      {"id":"biology.assay","label":"实验或组学类型","type":"set","operator":"one_of","placeholder":"例如：单细胞RNA测序"},
+      {"id":"biology.platform","label":"实验平台","type":"set","operator":"one_of","placeholder":"例如：Illumina"},
+      {"id":"biology.processing","label":"数据处理阶段","type":"set","operator":"one_of","placeholder":"例如：原始读段、表达矩阵"},
+      {"id":"biology.samples","label":"最低生物样本数","type":"number","operator":"at_least","unit":"生物样本","placeholder":"例如：50"}
+    ]},
+    {"id":"social","label":"社会科学","fields":[
+      {"id":"social.population","label":"调查对象","type":"set","operator":"includes_all","placeholder":"例如：家庭、企业、个体"},
+      {"id":"social.sampling","label":"抽样方法","type":"set","operator":"one_of","placeholder":"例如：分层抽样"},
+      {"id":"social.analysis_unit","label":"分析单位","type":"set","operator":"one_of","placeholder":"例如：个人、家庭、机构"},
+      {"id":"social.waves","label":"最低调查波次数","type":"number","operator":"at_least","unit":"波次","placeholder":"例如：3"},
+      {"id":"social.coverage_years","label":"所需调查年份","type":"range","operator":"covers_range","unit":"年","placeholder":"例如：2010-2022"},
+      {"id":"social.weights","label":"权重或问卷资源","type":"set","operator":"includes_all","placeholder":"例如：抽样权重、问卷"}
+    ]},
+    {"id":"engineering","label":"工程与材料","fields":[
+      {"id":"engineering.material","label":"材料或系统","type":"set","operator":"includes_all","placeholder":"例如：钛合金、电池"},
+      {"id":"engineering.conditions","label":"实验条件或工况","type":"set","operator":"includes_all","placeholder":"例如：室温、循环载荷"},
+      {"id":"engineering.instrument","label":"仪器或测试方法","type":"set","operator":"one_of","placeholder":"例如：X射线、拉伸试验"},
+      {"id":"engineering.parameters","label":"需提供的实验参数","type":"set","operator":"includes_all","placeholder":"例如：温度、应力、应变"},
+      {"id":"engineering.experiments","label":"最低独立实验数","type":"number","operator":"at_least","unit":"独立实验","placeholder":"例如：20"}
+    ]},
+    {"id":"computing","label":"AI 与计算","fields":[
+      {"id":"computing.task","label":"任务类型","type":"set","operator":"one_of","placeholder":"例如：分类、分割、问答"},
+      {"id":"computing.modality","label":"数据模态","type":"set","operator":"includes_all","placeholder":"例如：图像，文本"},
+      {"id":"computing.language","label":"语言","type":"set","operator":"includes_all","placeholder":"例如：中文、英文"},
+      {"id":"computing.labels","label":"标签或标注内容","type":"set","operator":"includes_all","placeholder":"例如：类别标签、边界框"},
+      {"id":"computing.splits","label":"所需数据划分","type":"set","operator":"includes_all","placeholder":"例如：训练集，测试集"},
+      {"id":"computing.records","label":"最低数据条数","type":"number","operator":"at_least","unit":"条记录","placeholder":"例如：10000"}
+    ]},
+    {"id":"geospatial","label":"地理与环境","fields":[
+      {"id":"geospatial.region","label":"研究地域","type":"set","operator":"includes_all","placeholder":"例如：中国、全球"},
+      {"id":"geospatial.coverage_years","label":"所需覆盖年份","type":"range","operator":"covers_range","unit":"年","placeholder":"例如：2010-2022"},
+      {"id":"geospatial.resolution_m","label":"最大空间分辨率","type":"number","operator":"at_most","unit":"米","placeholder":"例如：30"},
+      {"id":"geospatial.frequency","label":"时间频率","type":"set","operator":"one_of","placeholder":"例如：年度、逐日"},
+      {"id":"geospatial.crs","label":"坐标参考系","type":"set","operator":"one_of","placeholder":"例如：EPSG:4326"}
+    ]}
+  ]
+}

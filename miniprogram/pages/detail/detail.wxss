@@ -1,0 +1,3 @@
+.heading { font-size: 38rpx; line-height: 1.5; }
+.intro { line-height: 1.85; margin: 28rpx 0; }
+.doi { font-size: 24rpx; color: #344c43; word-break: break-all; margin-top: 20rpx; }

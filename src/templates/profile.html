@@ -1,0 +1,183 @@
+{% extends "auth_base.html" %}
+{% block title %}个人中心 - DataPaper{% endblock %}
+{% block content %}
+<section class="profile-section">
+    <div class="container">
+        {% include "_flash_messages.html" %}
+        <div class="profile-header">
+            <div>
+                <span class="section-kicker">YOUR RESEARCH FEED</span>
+                <h1>{{ current_user.display_name }}的论文推荐</h1>
+                <p>当前按照“{{ current_user.research_field }}”匹配现有论文库。</p>
+            </div>
+            <form method="post" action="{{ url_for('logout') }}">
+                <button class="button button-secondary" type="submit">退出登录</button>
+            </form>
+        </div>
+
+        <div class="profile-layout">
+            <aside class="profile-card">
+                <h2>研究兴趣档案</h2>
+                <form method="post" class="auth-form">
+                    <div class="form-group">
+                        <label for="display_name">昵称</label>
+                        <input id="display_name" name="display_name" type="text" maxlength="100" value="{{ current_user.display_name }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">邮箱</label>
+                        <input id="email" type="email" value="{{ current_user.email }}" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="research_field">研究领域</label>
+                        <textarea id="research_field" name="research_field" maxlength="500" rows="6" required>{{ current_user.research_field }}</textarea>
+                        <small>可加入研究对象、地区、时间尺度和数据类型。</small>
+                    </div>
+                    <button class="button button-primary auth-submit" type="submit">保存资料</button>
+                </form>
+
+                <div class="subscription-settings">
+                    <div class="subscription-settings-heading">
+                        <div>
+                            <span class="section-kicker">EMAIL DIGEST</span>
+                            <h2>邮件订阅</h2>
+                        </div>
+                        <span class="subscription-status {% if current_user.email_subscribed %}active{% endif %}">
+                            {{ '已开启' if current_user.email_subscribed else '未开启' }}
+                        </span>
+                    </div>
+                    <p>将与你研究领域相关的新论文发送到 {{ current_user.email }}。</p>
+                    <form method="post" action="{{ url_for('update_subscription') }}" class="auth-form">
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="email_subscribed" {% if current_user.email_subscribed %}checked{% endif %}>
+                            <span>
+                                <strong>接收论文推荐邮件</strong>
+                                <small>关闭后不会再发送订阅邮件。</small>
+                            </span>
+                        </label>
+                        <label class="select-field">
+                            <span>发送频率</span>
+                            <select name="email_frequency">
+                                <option value="weekly" {% if current_user.email_frequency == 'weekly' %}selected{% endif %}>每周一次</option>
+                                <option value="daily" {% if current_user.email_frequency == 'daily' %}selected{% endif %}>每日一次</option>
+                            </select>
+                        </label>
+                        <button class="button button-secondary auth-submit" type="submit">保存订阅设置</button>
+                    </form>
+                </div>
+            </aside>
+
+            <div class="profile-recommendations">
+                <div class="profile-recommendations-heading">
+                    <div>
+                        <span class="section-kicker">MATCHED PAPERS</span>
+                        <h2>为你推荐</h2>
+                    </div>
+                    <a class="nav-link" href="{{ url_for('index') }}#research-assistant">使用 AI 深入查找</a>
+                </div>
+                {% if recommendations %}
+                    <div class="profile-paper-list">
+                        {% for paper in recommendations %}
+                            <article class="profile-paper-card">
+                                <div class="profile-paper-meta">
+                                    <span>{{ paper.Subject or '其他' }}</span>
+                                    <time>{{ paper.publishDate or '日期未知' }}</time>
+                                </div>
+                                <h3>{{ paper.titleCn or paper.title }}</h3>
+                                {% if paper.titleCn and paper.title %}<p class="profile-paper-original">{{ paper.title }}</p>{% endif %}
+                                <p>{{ paper.reason }}</p>
+                                <div class="profile-paper-footer">
+                                    <span>{{ paper.journal }}</span>
+                                    <a href="{{ paper.url or ('https://doi.org/' + paper.doi) }}" target="_blank" rel="noopener noreferrer">查看论文</a>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="profile-empty">
+                        <h3>暂时没有直接匹配的论文</h3>
+                        <p>尝试在研究领域中加入更具体的主题、数据类型或英文关键词。</p>
+                    </div>
+                {% endif %}
+
+                <section class="library-section" id="favorites">
+                    <div class="profile-recommendations-heading">
+                        <div>
+                            <span class="section-kicker">SAVED PAPERS</span>
+                            <h2>我的收藏 <small>{{ favorites|length }}</small></h2>
+                        </div>
+                        <a class="nav-link" href="{{ url_for('index') }}#papers">继续发现论文</a>
+                    </div>
+                    {% if favorites %}
+                        <div class="library-list">
+                            {% for paper in favorites %}
+                                <article class="library-item">
+                                    <div class="library-item-content">
+                                        <div class="profile-paper-meta">
+                                            <span>{{ paper.Subject or '其他' }}</span>
+                                            <time>收藏于 {{ paper.created_at.strftime('%Y-%m-%d') if paper.created_at else '' }}</time>
+                                        </div>
+                                        <h3>{{ paper.titleCn or paper.title or '未命名论文' }}</h3>
+                                        <p>{{ paper.journal or '期刊未知' }}{% if paper.publishDate %} · {{ paper.publishDate }}{% endif %}</p>
+                                    </div>
+                                    <div class="library-item-actions">
+                                        {% if paper.url or paper.doi %}
+                                            <a class="button button-secondary button-sm" href="{{ paper.url or ('https://doi.org/' + paper.doi) }}" target="_blank" rel="noopener noreferrer">查看论文</a>
+                                        {% endif %}
+                                        <form method="post" action="{{ url_for('remove_profile_favorite') }}">
+                                            <input type="hidden" name="article_key" value="{{ paper.article_key }}">
+                                            <button class="library-remove-button" type="submit">取消收藏</button>
+                                        </form>
+                                    </div>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="profile-empty compact">
+                            <h3>还没有收藏论文</h3>
+                            <p>在论文列表或详情窗口点击“收藏”，之后可在这里快速找到。</p>
+                        </div>
+                    {% endif %}
+                </section>
+
+                <section class="library-section" id="reading-history">
+                    <div class="profile-recommendations-heading">
+                        <div>
+                            <span class="section-kicker">READING HISTORY</span>
+                            <h2>最近阅读 <small>{{ reading_history|length }}</small></h2>
+                        </div>
+                        {% if reading_history %}
+                            <form method="post" action="{{ url_for('clear_reading_history') }}">
+                                <button class="library-remove-button" type="submit">清空记录</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% if reading_history %}
+                        <div class="library-list">
+                            {% for paper in reading_history %}
+                                <article class="library-item">
+                                    <div class="library-item-content">
+                                        <div class="profile-paper-meta">
+                                            <span>{{ paper.Subject or '其他' }}</span>
+                                            <time>最近阅读 {{ paper.last_read_at.strftime('%Y-%m-%d %H:%M') if paper.last_read_at else '' }}</time>
+                                        </div>
+                                        <h3>{{ paper.titleCn or paper.title or '未命名论文' }}</h3>
+                                        <p>{{ paper.journal or '期刊未知' }} · 已查看 {{ paper.view_count }} 次</p>
+                                    </div>
+                                    {% if paper.url or paper.doi %}
+                                        <a class="button button-secondary button-sm" href="{{ paper.url or ('https://doi.org/' + paper.doi) }}" target="_blank" rel="noopener noreferrer">再次阅读</a>
+                                    {% endif %}
+                                </article>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="profile-empty compact">
+                            <h3>暂无阅读记录</h3>
+                            <p>登录后打开论文详情，系统会自动记录并按最近阅读时间排列。</p>
+                        </div>
+                    {% endif %}
+                </section>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

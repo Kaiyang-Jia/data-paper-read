@@ -1,0 +1,46 @@
+.auth-page {
+  padding-top: 80rpx;
+}
+
+.brand {
+  color: #087f5b;
+  font-weight: 750;
+  font-size: 30rpx;
+}
+
+.title {
+  font-size: 48rpx;
+  font-weight: 700;
+  margin-top: 20rpx;
+}
+
+.subtitle {
+  color: #718078;
+  line-height: 1.6;
+  margin: 16rpx 0 36rpx;
+}
+
+.form {
+  padding: 28rpx;
+}
+
+.form input,
+.form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 92rpx;
+  padding: 22rpx;
+  margin-bottom: 18rpx;
+  background: #f4f7f5;
+  border-radius: 14rpx;
+}
+
+.form textarea {
+  line-height: 1.6;
+}
+
+.switch {
+  color: #087f5b;
+  text-align: center;
+  padding: 34rpx;
+}

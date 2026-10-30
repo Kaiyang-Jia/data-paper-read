@@ -1,0 +1,96 @@
+.intro {
+  padding: 24rpx 8rpx 34rpx;
+}
+
+.kicker {
+  color: #087f5b;
+  font-size: 23rpx;
+  font-weight: 650;
+}
+
+.title {
+  font-size: 43rpx;
+  font-weight: 700;
+  margin-top: 14rpx;
+}
+
+.desc {
+  color: #64756d;
+  line-height: 1.7;
+  margin-top: 18rpx;
+}
+
+.chat {
+  padding: 28rpx;
+}
+
+.ai-message {
+  display: flex;
+  gap: 18rpx;
+  color: #52635b;
+  line-height: 1.6;
+  margin-bottom: 24rpx;
+}
+
+.avatar {
+  flex: 0 0 58rpx;
+  height: 58rpx;
+  line-height: 58rpx;
+  text-align: center;
+  color: #fff;
+  background: #087f5b;
+  border-radius: 16rpx;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 190rpx;
+  padding: 22rpx;
+  background: #f5f8f6;
+  border-radius: 16rpx;
+  line-height: 1.6;
+}
+
+.examples {
+  margin: 20rpx 0;
+}
+
+.example {
+  color: #087f5b;
+  font-size: 24rpx;
+  line-height: 1.5;
+  padding: 10rpx 0;
+}
+
+.answer,
+.recommendation {
+  padding: 28rpx;
+  margin-top: 22rpx;
+  line-height: 1.7;
+}
+
+.answer-title {
+  color: #087f5b;
+  font-weight: 650;
+  margin-bottom: 12rpx;
+}
+
+.recommendation-meta {
+  color: #087f5b;
+  font-size: 23rpx;
+}
+
+.recommendation-title {
+  font-size: 31rpx;
+  line-height: 1.5;
+  font-weight: 650;
+  margin-top: 12rpx;
+}
+
+.recommendation-reason {
+  color: #64756d;
+  margin-top: 14rpx;
+}

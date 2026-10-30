@@ -1,0 +1,19 @@
+<view class="page auth-page">
+  <view class="brand">DataPaper</view>
+  <view class="title">{{mode === 'login' ? '欢迎回来' : '创建研究档案'}}</view>
+  <view class="subtitle">{{mode === 'login' ? '登录后同步收藏、记录与个性化推荐' : '填写研究领域，获得更相关的论文推荐'}}</view>
+
+  <view class="form card">
+    <input data-field="email" value="{{form.email}}" bindinput="onFieldInput" type="text" placeholder="邮箱地址" />
+    <input wx:if="{{mode === 'register'}}" data-field="displayName" value="{{form.displayName}}" bindinput="onFieldInput" placeholder="昵称" />
+    <textarea wx:if="{{mode === 'register'}}" data-field="researchField" value="{{form.researchField}}" bindinput="onFieldInput" placeholder="研究领域，例如：遥感、城市气候、极端高温" auto-height />
+    <input data-field="password" value="{{form.password}}" bindinput="onFieldInput" password placeholder="密码（至少 8 位）" />
+    <button class="primary-button" loading="{{loading}}" disabled="{{loading}}" bindtap="submit">
+      {{mode === 'login' ? '登录' : '注册并登录'}}
+    </button>
+  </view>
+
+  <view class="switch" bindtap="switchMode">
+    {{mode === 'login' ? '还没有账号？立即注册' : '已有账号？返回登录'}}
+  </view>
+</view>

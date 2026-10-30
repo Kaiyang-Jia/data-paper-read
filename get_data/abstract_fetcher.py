@@ -9,6 +9,7 @@
 
 import requests
 import argparse
+import json
 import logging
 from bs4 import BeautifulSoup
 import csv
@@ -16,7 +17,10 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # 配置日志
 logging.basicConfig(
@@ -32,8 +36,20 @@ class AbstractFetcher:
     def __init__(self):
         """初始化摘要获取器"""
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'DataPaper/1.0 (academic metadata collection)'
         }
+        self.session = requests.Session()
+        retry = Retry(
+            total=3,
+            connect=3,
+            read=3,
+            backoff_factor=1,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(("GET", "HEAD")),
+            respect_retry_after_header=True,
+        )
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+        self.session.headers.update(self.headers)
     
     def doi_to_url(self, doi):
         """将DOI转换为URL"""
@@ -47,6 +63,11 @@ class AbstractFetcher:
         if doi.startswith("http"):
             return doi
         
+        # Nature Scientific Data 的 DOI 可直接映射到文章页，避免额外重定向。
+        nature_match = re.match(r"10\.1038/(s41597-[^\s]+)$", doi, flags=re.I)
+        if nature_match:
+            return f"https://www.nature.com/articles/{nature_match.group(1)}"
+
         # 构造DOI解析URL
         return f"https://doi.org/{doi}"
     
@@ -66,7 +87,7 @@ class AbstractFetcher:
         final_url = url
         try:
             # 发送HEAD请求，只获取头信息，不下载内容
-            response = requests.head(url, headers=self.headers, timeout=10, allow_redirects=True)
+            response = self.session.head(url, timeout=10, allow_redirects=True)
             final_url = response.url
             print(f"重定向后的URL: {final_url}")
         except Exception as e:
@@ -149,28 +170,21 @@ class AbstractFetcher:
         try:
             # 发送请求
             logger.info(f"正在获取页面内容: {url}")
-            print(f"正在请求: {url}")  # 添加更明显的输出
-            
             # 增加超时设置，并允许重定向
-            response = requests.get(
-                url, 
-                headers=self.headers, 
-                timeout=30,  # 增加超时时间到30秒
-                allow_redirects=True  # 自动处理重定向
+            response = self.session.get(
+                url,
+                timeout=(10, 30),
+                allow_redirects=True
             )
-            
-            print(f"请求状态码: {response.status_code}")  # 输出状态码
             
             # 处理状态码
             if response.status_code != 200:
                 logger.error(f"获取页面失败，状态码: {response.status_code}")
-                print(f"错误: 获取页面失败，状态码: {response.status_code}")
                 return {"abstract": "", "journal": "unknown", "url": url}
                 
             # 识别期刊
-            journal = self.get_journal_from_url(url)
+            journal = journal_name or self.get_journal_from_url(response.url)
             logger.info(f"识别出期刊: {journal}")
-            print(f"识别出期刊: {journal}")
             
             # 解析HTML
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -178,16 +192,24 @@ class AbstractFetcher:
             # 根据不同期刊使用不同的选择器
             abstract = ""
             
-            if journal == "Scientific Data":
+            if journal in ("Scientific Data", "Nature Scientific Data"):
                 # 尝试多种选择器
-                abstract_elements = soup.select('div#Abs1-content, section[data-title="Abstract"] p')
+                abstract_elements = soup.select(
+                    'div#Abs1-content p, section[data-title="Abstract"] p'
+                )
                 if abstract_elements:
-                    abstract = "\n".join([elem.get_text().strip() for elem in abstract_elements])
+                    abstract = "\n".join(
+                        elem.get_text(" ", strip=True) for elem in abstract_elements
+                    )
                 else:
-                    # 尝试查找更通用的选择器
-                    abstract_elements = soup.select('div.c-article-section__content p')
-                    if abstract_elements:
-                        abstract = "\n".join([elem.get_text().strip() for elem in abstract_elements])
+                    for selector in (
+                        'meta[name="dc.description"]',
+                        'meta[name="description"]',
+                    ):
+                        element = soup.select_one(selector)
+                        if element and element.get("content"):
+                            abstract = element["content"]
+                            break
             
             elif journal == "Earth System Science Data":
                 # ESSD期刊摘要选择器
@@ -226,9 +248,6 @@ class AbstractFetcher:
             else:
                 logger.warning(f"未能找到摘要内容")
                 
-                # 尝试打印页面内容的一部分，帮助调试
-                page_sample = response.text[:500] + "..." if len(response.text) > 500 else response.text
-            
             return {
                 "abstract": abstract,
                 "journal": journal,
@@ -237,10 +256,71 @@ class AbstractFetcher:
             
         except Exception as e:
             logger.error(f"获取摘要过程中发生错误: {e}")
-            import traceback
-            print(f"错误: {e}")
-            print(traceback.format_exc())  # 打印完整的错误栈
             return {"abstract": "", "journal": "unknown", "url": url}
+
+    def process_jsonl(self, input_file, output_file=None, workers=4):
+        """并发补全 JSONL 中缺失的摘要，并保留原有记录顺序。"""
+        if not os.path.exists(input_file):
+            logger.error(f"输入文件不存在: {input_file}")
+            return 0, 0
+
+        if not output_file:
+            name, ext = os.path.splitext(input_file)
+            output_file = f"{name}_with_abstracts{ext or '.jsonl'}"
+
+        with open(input_file, "r", encoding="utf-8") as source:
+            rows = [json.loads(line) for line in source if line.strip()]
+
+        missing_indexes = [
+            index
+            for index, row in enumerate(rows)
+            if not str(row.get("abstract", "")).strip() and row.get("doi")
+        ]
+        logger.info("共 %s 条记录，其中 %s 条需要补摘要", len(rows), len(missing_indexes))
+
+        def fetch(index):
+            row = rows[index]
+            result = self.fetch_abstract(
+                row["doi"],
+                journal_name=row.get("journal"),
+            )
+            return index, result.get("abstract", "")
+
+        def save_rows():
+            temporary_file = f"{output_file}.tmp"
+            with open(temporary_file, "w", encoding="utf-8") as target:
+                for row in rows:
+                    target.write(json.dumps(row, ensure_ascii=False) + "\n")
+            os.replace(temporary_file, output_file)
+
+        completed = 0
+        processed = 0
+        with ThreadPoolExecutor(max_workers=max(1, min(workers, 8))) as executor:
+            futures = {executor.submit(fetch, index): index for index in missing_indexes}
+            for future in as_completed(futures):
+                index = futures[future]
+                processed += 1
+                try:
+                    _, abstract = future.result()
+                    if abstract:
+                        rows[index]["abstract"] = abstract
+                        completed += 1
+                except Exception as exc:
+                    logger.error("补摘要失败，DOI %s: %s", rows[index].get("doi"), exc)
+
+                if processed % 50 == 0 or processed == len(futures):
+                    save_rows()
+                    logger.info(
+                        "补摘要进度 %s/%s，成功 %s",
+                        processed,
+                        len(futures),
+                        completed,
+                    )
+
+        save_rows()
+
+        logger.info("摘要补全完成，成功 %s/%s: %s", completed, len(missing_indexes), output_file)
+        return completed, len(missing_indexes)
     
     def process_csv(self, input_file, output_file=None):
         """处理CSV文件中的DOI，获取摘要
@@ -325,6 +405,8 @@ def main():
     parser.add_argument('--doi', help='要获取摘要的DOI或URL')
     parser.add_argument('--input', help='输入CSV文件路径')
     parser.add_argument('--output', help='输出CSV文件路径')
+    parser.add_argument('--jsonl', help='输入JSONL文件并补全缺失摘要')
+    parser.add_argument('--workers', type=int, default=4, help='JSONL补摘要并发数，默认4')
     
     args = parser.parse_args()
     
@@ -336,6 +418,10 @@ def main():
         print(f"期刊: {result['journal']}")
         print(f"摘要: {result['abstract']}")
         
+    elif args.jsonl:
+        completed, total = fetcher.process_jsonl(args.jsonl, args.output, args.workers)
+        print(f"摘要补全完成，成功 {completed}/{total}")
+
     elif args.input:
         # CSV模式
         success = fetcher.process_csv(args.input, args.output)

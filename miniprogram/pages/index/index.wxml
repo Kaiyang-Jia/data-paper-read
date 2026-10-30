@@ -1,0 +1,14 @@
+<import src="../../templates/papers.wxml" />
+<view class="page">
+  <view class="kicker">DATAPAPER / DAILY</view>
+  <view class="heading">每天，发现几篇好论文</view>
+  <view class="muted">{{date}} · 从近期数据论文中精选</view>
+  <view class="muted">随时查看，留给有空的自己，也分享给同行。</view>
+  <button class="primary-button" bindtap="goSearch">快速搜索论文</button>
+  <view class="status" wx:if="{{offline}}">当前显示 {{date}} 缓存 · 下拉刷新</view>
+  <view class="status" wx:else>{{totalCount}} 篇已收录 · 今天推荐 {{items.length}} 篇</view>
+  <view wx:if="{{loading && !items.length}}" class="empty">正在准备今日推荐…</view>
+  <view wx:if="{{error}}" class="empty" bindtap="loadDaily">{{error}}</view>
+  <template is="papers" data="{{items: items}}" />
+  <view wx:if="{{!loading && !error && !items.length}}" class="empty">推荐即将上线，先试试搜索吧</view>
+</view>
